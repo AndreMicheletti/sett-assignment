@@ -1,0 +1,9 @@
+Implement this game for me in a single html file.
+Output just the html content, nothing more.
+Double-check if any `import` statements are used or dependencies are required,
+and include them using latest CDN found in the internet.
+For three.js, use: https://cdn.jsdelivr.net/npm/three-js@79.0.0/three.min.js
+
+<Implementation Plan>
+{plan}
+</Implementation Plan>

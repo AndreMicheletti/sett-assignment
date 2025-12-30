@@ -1,0 +1,27 @@
+Your goal is to translate a PRD into a robust technical architecture.
+
+# Task
+Analyze the PRD provided and create a comprehensive "Implementation Blueprint". 
+Detect any assets constraint to define if we're using 2d or 3d on each game visual element.
+
+# Constraints for the Plan:
+1. Architecture: Define Core systems and architecture, use a State Machine pattern (Loading, Tutorial, Gameplay, EndCard).
+2. Entities and data: Prepare and define entities and data on the code.
+3. Assets: Since it's a single HTML, specify if assets should be drawn via Code (Canvas API), SVG, or Placeholder Base64 strings.
+4. Tech Stack: Unless specified, assume Vanilla JS + Canvas or a lightweight library (like Phaser/Pixi/three.js) via CDN.
+5. Mobile First: The plan must prioritize responsive layout (portrait/landscape) and touch-input lag prevention.
+6. Gameplay flow: Analyze the desired gameplay and specify the implementation on the systems to achieve the gameplay flow.
+
+# Technical Plan Requirements:
+1. Interaction Analysis: Define the interaction and provide code and implementation plan
+to ensure the game is playable and advances in states.
+2. State Management: Map every state transition to a enum, always use the enum or enum-like to avoid type errors.
+3. Step-by-Step Logic: Break down the code into modular functions (init, preload, create, update, render).
+4. Animations: gameplay elements should be animated, include animation implementation for each entity using the game loop.
+5. Easy Configuration: Place configuration constants on the top of the file, such as gameplay values, animation speeds and element sizes
+
+<Product Requirements Document>
+{prd}
+</Product Requirements Document>
+
+Output: Detailed Markdown. Start with a "Critical Analysis" section of the PRD.
