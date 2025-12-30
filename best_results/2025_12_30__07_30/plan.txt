@@ -1,0 +1,1114 @@
+## Critical Analysis
+
+Key points and clarifications inferred from the PRD:
+
+1. **Rounds & Win Condition**
+   - Exactly **3 rounds** (casts). After the 3rd, we go to **EndCard** state.
+   - There’s no explicit “win/lose” condition beyond accumulating coins; assume the objective is to showcase progression and upgrades within those 3 rounds.
+
+2. **Currencies & Costs**
+   - Player starts with **100 coins**.
+   - Upgrades have **fixed cost tiers**; unclear if:
+     - Player can buy **multiple tiers in one session** (e.g. go from 6 → 8 fish in one screen), or
+     - Only one upgrade per click and then cost/value steps to the **next tier** for subsequent rounds.
+   - No “fish currency” is specified; only **coins** are counted and used for purchases.
+
+   **Assumption:**  
+   - Upgrades are **step-based**. Each purchase advances to next tier until max:
+     - Max fish: 6 → 7 → 8 → 9 → 10 (then disabled).
+     - Max depth: 5 → 10 → 15 → 20 → 30 m (then disabled).
+   - If coins are insufficient, upgrade button is disabled (“grayed out”).
+
+3. **Depth & Gauge**
+   - Gauge determines **target depth** between `maxDepth - 2m` (min) and `maxDepth` (max).
+   - This is relative to the current **maxDepth upgrade**.
+   - Pointer oscillates min ↔ max ↔ min (pendulum motion with ease-in/out at ends).
+
+4. **3D Visual Requirement**
+   - “Fisherman and fishes need to be in 3D but no real assets required - can be a basic 3D shape.”
+   - Single-file playable, so **lightweight 3D** needed.
+   - For performance and size, we should avoid heavy 3D models; instead use basic primitives (boxes, spheres).
+
+   **Conclusion:**  
+   - Use **three.js via CDN** for 3D of fisherman + fish + hook.  
+   - 2D UI (gauges, counters, texts) via **Canvas 2D** or HTML/CSS on top.
+
+5. **Fish System**
+   - Different fish types, each with:
+     - **Depth ranges** for spawning,
+     - **Coin value**,
+     - Optional **rarity labels** (“rare!”, “amazing!”, “legendary!”).
+   - Higher depth → better chance of higher rarity.
+   - A **maxFish** cap per round; once reached, hook speeds up and ignores more fish.
+
+6. **Tutorial**
+   - First cast: when hook reaches target depth, pause longer (~2s).
+   - Show tutorial “move the hook to catch fish”, then resume.
+
+7. **Camera & Movement**
+   - Camera follows hook going down and coming back up.
+   - Player **controls horizontal** movement of hook while it’s moving upwards, dragging it left/right to intersect fish.
+
+8. **HUD Swapping**
+   - Top HUD: **Coin counter** visible initially and when hook at surface.
+   - When fishing begins (hook going down), **fish counter replaces coin counter**.
+   - Right before surfacing, coin counter comes back (fish counter hidden).
+
+9. **Animations & FX**
+   - While ascending:
+     - Catch fish: coin value pop, small bounce/scale, label for special fish.
+   - At surface after each round:
+     - Sequential fish jump animation.
+     - Coin burst from each fish.
+     - Sum total coins from fish, count-up animation on “round total” and then coins fly into the persistent coin counter.
+
+10. **Playable Ads Constraints**
+    - Single HTML file, everything inline.
+    - Low latency / touch-optimized, mobile first.
+    - Must be quick to load: minimal libraries, tiny inlined placeholder assets.
+
+---
+
+## High-Level Tech Stack & Rendering Strategy
+
+### Libraries
+
+- **Three.js** via CDN (light build) for 3D:
+  - Render **fisherman**, **hook**, **fish**, and **basic water environment** with flat colors, primitive meshes.
+- **Vanilla JS** for:
+  - State machine, input, game loop, entity management.
+- **HTML + CSS** for **UI HUD** (coins, fish counter, buttons, text):
+  - Easier for crisp texts and responsive layout than canvas text.
+- **Optional**: use Three.js’s built-in `Clock` and basic tween helpers (or implement a tiny custom tween system) to keep payload small.
+
+No separate build pipeline; all code in `<script>` tag; CSS in `<style>`.
+
+### 2D vs 3D Asset Decision Per Element
+
+- **3D (Three.js)**:
+  - Fisherman (box/capsule with basic limbs or just torso + head)
+  - Boat/platform (simple box)
+  - Hook (cylinder/box)
+  - Fish (scaled/colored boxes or capsules)
+  - Fishing line (thin cylinder or line)
+  - Background depth (fog + gradient background color; optional vertical planes)
+
+- **2D (HTML/CSS or Canvas)**:
+  - Coin counter (HTML)
+  - Fish counter + fill bar (HTML)
+  - Upgrade buttons (HTML buttons styled as divs)
+  - Play button and power gauge:
+    - Background bar + moving pointer implemented as HTML elements with CSS transforms.
+  - Text labels (“rare!”, “amazing!”, “legendary!”, tutorial, round summary).
+  - Coin burst: can be CSS-based (absolute-positioned divs with `border-radius: 50%`) or small canvas overlay.
+
+- **Base64 (if needed)**:
+  - Minimalistic coin icon (small svg-as-data-uri or PNG).
+  - Minimal fish icon for counter, but we can also use simple text “xN”.
+
+Given “no real assets required”, we can do **everything programmatically** without external image/base64, and rely on primitive shapes + CSS.
+
+---
+
+## Core Architecture Overview
+
+Single-file structure:
+
+```html
+<html>
+<head>
+  <style>
+    /* Layout, HUD, buttons, responsive */
+  </style>
+</head>
+<body>
+  <div id="game-root">
+    <canvas id="game-canvas"></canvas>
+    <div id="ui-root">
+      <!-- HUD, buttons, texts -->
+    </div>
+  </div>
+  <script src="https://unpkg.com/three@0.157.0/build/three.min.js"></script>
+  <script>
+    // All JS here (state machine, game code)
+  </script>
+</body>
+</html>
+```
+
+### Game States (State Machine Pattern)
+
+States:
+
+1. **LOADING**
+2. **TUTORIAL** (overlay during first round’s pause)
+3. **GAMEPLAY**
+   - Sub-phases (handled via internal `phase` enum):
+     - `SETUP` (upgrades + gauge ready)
+     - `GAUGE` (pointer moving, waiting for tap to start cast)
+     - `CAST_DOWN` (hook descending, camera follows)
+     - `PAUSE_AT_DEPTH` (brief pause; first round triggers Tutorial)
+     - `ASCEND` (hook ascending, player controls horizontal)
+     - `SURFACE_SUMMARY` (fish payout animations, coin updates)
+4. **ENDCARD**
+
+Transitions:
+
+- LOADING → GAMEPLAY (phase: SETUP, round = 1).
+- GAMEPLAY (phase: CAST_DOWN) & first round → TUTORIAL (overlay) → back to GAMEPLAY (phase: ASCEND).
+- After each SURFACE_SUMMARY:
+  - If `round < 3`: round++, back to GAMEPLAY (phase: SETUP).
+  - Else: ENDCARD.
+- ENDCARD: show CTA.
+
+---
+
+## Entities & Data Structures
+
+Use plain JS objects; minimal classes.
+
+### Global Game State
+
+```js
+const GameState = {
+  currentState: 'LOADING', // 'LOADING'|'GAMEPLAY'|'TUTORIAL'|'ENDCARD'
+  round: 1,
+  maxRounds: 3,
+
+  coins: 100,
+
+  // Upgrades
+  maxFish: 6,
+  maxFishTierIndex: 0,
+  maxFishTiers: [
+    { value: 6, cost: 0 },
+    { value: 7, cost: 50 },
+    { value: 8, cost: 100 },
+    { value: 9, cost: 200 },
+    { value: 10, cost: 400 }
+  ],
+
+  maxDepth: 5,
+  maxDepthTierIndex: 0,
+  maxDepthTiers: [
+    { value: 5, cost: 0 },
+    { value: 10, cost: 50 },
+    { value: 15, cost: 75 },
+    { value: 20, cost: 150 },
+    { value: 30, cost: 300 }
+  ],
+
+  // Current cast
+  currentPhase: 'SETUP', // see phases above
+  selectedDepth: 5,      // actual depth chosen by gauge
+  hookDepth: 0,          // 0 = surface, increasing downwards
+  hookX: 0,              // lateral position
+  hookSpeedDown: 10,     // units per second
+  hookSpeedUp: 8,        // units per second (changes when max fish reached)
+
+  fishCaught: [],
+  fishCaughtCount: 0,
+
+  tutorialShown: false
+};
+```
+
+### Fish Definitions
+
+```js
+const FishTypes = [
+  {
+    id: 'small',
+    baseValue: 5,
+    depthMin: 0,
+    depthMax: 10,
+    rarityLabel: null, // common
+    color: 0x66ccff
+  },
+  {
+    id: 'medium',
+    baseValue: 15,
+    depthMin: 5,
+    depthMax: 20,
+    rarityLabel: 'rare!',
+    color: 0x44aa44
+  },
+  {
+    id: 'big',
+    baseValue: 30,
+    depthMin: 10,
+    depthMax: 30,
+    rarityLabel: 'amazing!',
+    color: 0xffaa00
+  },
+  {
+    id: 'legend',
+    baseValue: 60,
+    depthMin: 20,
+    depthMax: 40,
+    rarityLabel: 'legendary!',
+    color: 0xaa44ff
+  }
+];
+```
+
+### Fish Instance Structure
+
+```js
+// In-world fish data
+// Plus reference to its Three.js mesh
+const fishEntities = []; // reused per round
+
+// Example structure
+/*
+{
+  id: number,
+  type: FishTypes[x],
+  mesh: THREE.Mesh,
+  x: number,            // world x
+  depth: number,        // world y (downwards)
+  caught: false,
+  value: number
+}
+*/
+```
+
+### Hook & Camera
+
+```js
+const HookState = {
+  mesh: null,      // Three.js Mesh
+  lineMesh: null,
+  targetDepth: 0,
+  verticalSpeed: 0,
+  horizontalTargetX: 0, // from touch/mouse
+  horizontalSpeed: 15,  // smoothing factor
+};
+
+const CameraState = {
+  camera: null,
+  baseY: 5,        // surface level
+  followSpeed: 5   // smoothing, units/s
+};
+```
+
+### UI References
+
+```js
+const UI = {
+  coinCounter: null,
+  fishCounter: null,
+  fishProgressFill: null,
+  playButton: null,
+  gaugeBar: null,
+  gaugePointer: null,
+  upgradeMaxFishBtn: null,
+  upgradeMaxDepthBtn: null,
+  tutorialOverlay: null,
+  summaryPanel: null,
+  endCard: null,
+};
+```
+
+---
+
+## Step-by-Step Logic & Modular Functions
+
+We organize code into logical modules:
+
+### 1. Initialization & Preload
+
+```js
+function init() {
+  cacheDomElements();
+  setupThreeScene();
+  setupUI();
+  setupEventListeners();
+  resize();
+  window.addEventListener('resize', resize);
+
+  GameState.currentState = 'GAMEPLAY';
+  GameState.currentPhase = 'SETUP';
+
+  requestAnimationFrame(gameLoop);
+}
+```
+
+#### `cacheDomElements()`
+- Query and store references to all UI elements.
+
+#### `setupThreeScene()`
+- Create `renderer`, `scene`, `camera`.
+- Attach renderer to `#game-canvas`.
+- Create:
+  - Boat / fisherman mesh at y=0.
+  - Hook mesh hanging from boat.
+  - Line (simple cylinder or `THREE.Line`).
+  - Ambient + directional light.
+  - Simple fog and background color gradient.
+
+#### `setupUI()`
+- Initialize counters text.
+- Hide tutorial overlay, summary panels, end card.
+- Initialize gauge pointer position (center or min).
+
+#### `setupEventListeners()`
+- Touch/mouse for:
+  - Play button tap (to stop gauge, start cast).
+  - Upgrade buttons.
+  - Drag / move for hook horizontal control during ASCEND.
+
+Implementation (mobile first):
+
+```js
+function setupEventListeners() {
+  UI.playButton.addEventListener('click', onPlayButtonClick);
+  UI.upgradeMaxFishBtn.addEventListener('click', onUpgradeMaxFish);
+  UI.upgradeMaxDepthBtn.addEventListener('click', onUpgradeMaxDepth);
+
+  const gameRoot = document.getElementById('game-root');
+  gameRoot.addEventListener('touchstart', onPointerDown, { passive: false });
+  gameRoot.addEventListener('touchmove', onPointerMove, { passive: false });
+  gameRoot.addEventListener('touchend', onPointerUp, { passive: false });
+
+  gameRoot.addEventListener('mousedown', onPointerDown);
+  gameRoot.addEventListener('mousemove', onPointerMove);
+  gameRoot.addEventListener('mouseup', onPointerUp);
+}
+```
+
+`{ passive: false }` allows us to `preventDefault()` to avoid scroll lag.
+
+### 2. Game Loop
+
+```js
+let lastTime = 0;
+function gameLoop(timestamp) {
+  const dt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+
+  update(dt);
+  render();
+
+  requestAnimationFrame(gameLoop);
+}
+```
+
+#### `update(dt)`
+
+```js
+function update(dt) {
+  switch (GameState.currentState) {
+    case 'GAMEPLAY':
+      updateGameplay(dt);
+      break;
+    case 'TUTORIAL':
+      updateTutorial(dt);
+      break;
+    case 'ENDCARD':
+      // minimal updates, maybe particle idle
+      break;
+  }
+}
+```
+
+#### `updateGameplay(dt)`
+
+```js
+function updateGameplay(dt) {
+  switch (GameState.currentPhase) {
+    case 'SETUP':
+      updateSetupPhase(dt);
+      break;
+    case 'GAUGE':
+      updateGaugePhase(dt);
+      break;
+    case 'CAST_DOWN':
+      updateCastDownPhase(dt);
+      break;
+    case 'PAUSE_AT_DEPTH':
+      updatePauseAtDepthPhase(dt);
+      break;
+    case 'ASCEND':
+      updateAscendPhase(dt);
+      break;
+    case 'SURFACE_SUMMARY':
+      updateSurfaceSummaryPhase(dt);
+      break;
+  }
+
+  updateCamera(dt);
+}
+```
+
+### Phase Logic Details
+
+#### SETUP Phase
+
+- Show upgrades and play button + gauge.
+- Coin HUD visible; fish HUD hidden.
+- Reset values from previous round.
+
+```js
+function enterSetupPhase() {
+  GameState.currentPhase = 'SETUP';
+  GameState.fishCaught = [];
+  GameState.fishCaughtCount = 0;
+  GameState.hookDepth = 0;
+  HookState.mesh.position.set(0, 0, 0);
+
+  showCoinHUD(true);
+  showFishHUD(false);
+  showGauge(true);
+  showPlayButton(true);
+  showUpgradeButtons(true);
+  hideSummary();
+}
+```
+
+`updateSetupPhase` mostly idle; just gauge idle animation if needed.
+
+On **Play button click** in SETUP:
+
+```js
+function onPlayButtonClick() {
+  if (GameState.currentState !== 'GAMEPLAY') return;
+  if (GameState.currentPhase === 'SETUP') {
+    startGaugePhase();
+  } else if (GameState.currentPhase === 'GAUGE') {
+    lockGaugeAndStartCast();
+  }
+}
+```
+
+#### GAUGE Phase
+
+- Gauge pointer oscillates between min and max:
+
+```js
+let gaugeTime = 0;
+let gaugeDirection = 1;
+
+function startGaugePhase() {
+  GameState.currentPhase = 'GAUGE';
+  gaugeTime = 0;
+  gaugeDirection = 1;
+  showUpgradeButtons(false);
+}
+
+function updateGaugePhase(dt) {
+  const duration = 1.5; // time from min to max
+  gaugeTime += dt * gaugeDirection;
+
+  if (gaugeTime > duration) {
+    gaugeTime = duration;
+    gaugeDirection = -1;
+  } else if (gaugeTime < 0) {
+    gaugeTime = 0;
+    gaugeDirection = 1;
+  }
+
+  const t = gaugeTime / duration; // 0..1
+  const eased = easeInOutQuad(t);
+  updateGaugePointerUI(eased); // animate pointer in UI
+}
+```
+
+On second click (or same button tap), we **lock depth** and start cast:
+
+```js
+function lockGaugeAndStartCast() {
+  const t = gaugeTime / 1.5;
+  const eased = easeInOutQuad(t);
+  const minDepth = GameState.maxDepth - 2;
+  const maxDepth = GameState.maxDepth;
+  GameState.selectedDepth = minDepth + (maxDepth - minDepth) * eased;
+
+  showGauge(false);
+  showCoinHUD(false);
+  showFishHUD(true);
+
+  prepareFishForCast();
+  enterCastDownPhase();
+}
+```
+
+#### CAST_DOWN Phase
+
+- Animate hook going from `0` down to `selectedDepth`.
+- Camera follows.
+
+```js
+function enterCastDownPhase() {
+  GameState.currentPhase = 'CAST_DOWN';
+  HookState.verticalSpeed = GameState.hookSpeedDown;
+}
+
+function updateCastDownPhase(dt) {
+  GameState.hookDepth += HookState.verticalSpeed * dt;
+  if (GameState.hookDepth >= GameState.selectedDepth) {
+    GameState.hookDepth = GameState.selectedDepth;
+    enterPauseAtDepthPhase();
+  }
+  updateHookWorldPosition();
+}
+```
+
+`updateHookWorldPosition()` maps `hookDepth` to world Y (e.g. `y = -hookDepth`).
+
+#### PAUSE_AT_DEPTH Phase
+
+- First round: 2s pause & show tutorial overlay.
+- Later rounds: 0.5–1s pause only, no overlay.
+
+```js
+let pauseTimer = 0;
+
+function enterPauseAtDepthPhase() {
+  GameState.currentPhase = 'PAUSE_AT_DEPTH';
+  pauseTimer = 0;
+
+  if (!GameState.tutorialShown && GameState.round === 1) {
+    showTutorialOverlay(true);
+    GameState.currentState = 'TUTORIAL';
+  }
+}
+
+function updatePauseAtDepthPhase(dt) {
+  pauseTimer += dt;
+  const targetPause = GameState.round === 1 ? 2.0 : 0.8;
+  if (pauseTimer >= targetPause) {
+    enterAscendPhase();
+  }
+}
+```
+
+#### TUTORIAL State
+
+While tutorial overlay is shown:
+
+```js
+function updateTutorial(dt) {
+  // overlay is static; we just wait for timer expiration in PAUSE_AT_DEPTH
+  // or we can auto-close after 2s and switch back:
+  if (GameState.currentState === 'TUTORIAL' && pauseTimer >= 2.0) {
+    showTutorialOverlay(false);
+    GameState.tutorialShown = true;
+    GameState.currentState = 'GAMEPLAY';
+  }
+}
+```
+
+*(Alternately, we can keep `currentState = GAMEPLAY` and simply show overlay; but the requested pattern includes a TUTORIAL state; above implementation uses TUTORIAL as a brief overlay state.)*
+
+#### ASCEND Phase
+
+- Hook moves upward.
+- Player controls horizontal x via drag.
+- Collision detection: hook vs fish.
+- When `fishCaughtCount >= maxFish`, increase vertical speed to fast and disable further catches.
+
+```js
+function enterAscendPhase() {
+  GameState.currentState = 'GAMEPLAY';
+  GameState.currentPhase = 'ASCEND';
+  HookState.verticalSpeed = -GameState.hookSpeedUp; // negative to go up
+}
+
+function updateAscendPhase(dt) {
+  // Vertical
+  GameState.hookDepth += HookState.verticalSpeed * dt;
+  if (GameState.hookDepth <= 0) {
+    GameState.hookDepth = 0;
+    // Switch HUDs just before surface:
+    showFishHUD(false);
+    showCoinHUD(true);
+    enterSurfaceSummaryPhase();
+    return;
+  }
+
+  // Horizontal smoothing towards target
+  const dx = HookState.horizontalTargetX - GameState.hookX;
+  GameState.hookX += dx * Math.min(1, HookState.horizontalSpeed * dt);
+
+  updateHookWorldPosition();
+  checkFishCollisions();
+
+  // If reached max fish, speed up and ignore further catches
+  if (GameState.fishCaughtCount >= GameState.maxFish) {
+    HookState.verticalSpeed = -GameState.hookSpeedUp * 2;
+  }
+}
+```
+
+##### Input → `horizontalTargetX`
+
+We map pointer position to normalized world coordinates:
+
+```js
+function onPointerMove(e) {
+  if (GameState.currentState !== 'GAMEPLAY') return;
+  if (GameState.currentPhase !== 'ASCEND') return;
+
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const rect = document.getElementById('game-root').getBoundingClientRect();
+  const norm = (clientX - rect.left) / rect.width; // 0..1
+  const worldMinX = -5;
+  const worldMaxX = 5;
+  HookState.horizontalTargetX = worldMinX + norm * (worldMaxX - worldMinX);
+  e.preventDefault();
+}
+```
+
+#### Collision Detection with Fish
+
+- Simple radius-based hit test between hook and each uncaught fish.
+
+```js
+function checkFishCollisions() {
+  const hookPos = HookState.mesh.position;
+  const hookRadius = 0.5;
+
+  for (const fish of fishEntities) {
+    if (fish.caught) continue;
+    const dx = fish.mesh.position.x - hookPos.x;
+    const dy = fish.mesh.position.y - hookPos.y;
+    const distSq = dx*dx + dy*dy;
+    const radius = hookRadius + 0.5;
+    if (distSq <= radius * radius) {
+      catchFish(fish);
+      // If reached max fish, can break (no further catches this frame)
+      if (GameState.fishCaughtCount >= GameState.maxFish) {
+        break;
+      }
+    }
+  }
+}
+
+function catchFish(fish) {
+  fish.caught = true;
+  GameState.fishCaught.push(fish);
+  GameState.fishCaughtCount++;
+
+  attachFishToHook(fish);
+  updateFishCounterUI();
+
+  spawnCatchPopEffect(fish); // value + label (rare!, etc.)
+}
+```
+
+`attachFishToHook` simply parents fish mesh to hook mesh and offsets slightly along y or z.
+
+#### SURFACE_SUMMARY Phase
+
+- Once hook reaches surface, show:
+  - Fish jumping / bounce animation.
+  - Per-fish coin pop + label.
+  - Coin burst.
+  - Final total and coin counter increase.
+
+Implementation approach:
+
+- Create a small **state machine internal to SURFACE_SUMMARY** with time-based sequencing:
+
+```js
+const SummaryState = {
+  step: 0, // 0 = per-fish, 1 = total count-up, 2 = delay->next round/end
+  timer: 0,
+  totalRoundCoins: 0
+};
+
+function enterSurfaceSummaryPhase() {
+  GameState.currentPhase = 'SURFACE_SUMMARY';
+
+  SummaryState.step = 0;
+  SummaryState.timer = 0;
+  SummaryState.totalRoundCoins = GameState.fishCaught.reduce(
+    (sum, f) => sum + f.value, 0
+  );
+
+  showSummaryPanel(true);
+  startFishSummaryAnimations();
+}
+
+function updateSurfaceSummaryPhase(dt) {
+  SummaryState.timer += dt;
+
+  switch (SummaryState.step) {
+    case 0: // animate each fish sequentially
+      updateFishJumpAnimations(dt);
+      if (fishSummaryAnimationsDone()) {
+        SummaryState.step = 1;
+        SummaryState.timer = 0;
+        startTotalCountUp();
+      }
+      break;
+    case 1: // count-up total, coins fly to counter
+      updateTotalCountUp(dt);
+      if (totalCountUpComplete()) {
+        SummaryState.step = 2;
+        SummaryState.timer = 0;
+      }
+      break;
+    case 2: // small delay, then next round or end
+      if (SummaryState.timer > 0.5) {
+        finishRoundAndAdvance();
+      }
+      break;
+  }
+}
+```
+
+`finishRoundAndAdvance()`:
+
+```js
+function finishRoundAndAdvance() {
+  // Add totalRoundCoins to GameState.coins already done in count-up
+  GameState.round++;
+  if (GameState.round > GameState.maxRounds) {
+    enterEndCard();
+  } else {
+    enterSetupPhase();
+  }
+}
+```
+
+---
+
+## Fish Spawning Logic
+
+`prepareFishForCast()`:
+
+- Clear previous fish entities from scene and array.
+- Spawn new fish in a vertical band from surface to some factor of maxDepth:
+
+```js
+function prepareFishForCast() {
+  // Cleanup old fish
+  for (const f of fishEntities) {
+    scene.remove(f.mesh);
+  }
+  fishEntities.length = 0;
+
+  const worldMinX = -5;
+  const worldMaxX = 5;
+  const depthSpan = GameState.maxDepth * 1.2;
+  const numFish = 20; // tuned to feel dense but performant
+
+  for (let i = 0; i < numFish; i++) {
+    const depth = Math.random() * depthSpan;
+    const type = pickFishTypeForDepth(depth);
+    const mesh = createFishMesh(type.color);
+    const x = worldMinX + Math.random() * (worldMaxX - worldMinX);
+    const y = -depth; // world y
+    mesh.position.set(x, y, 0);
+
+    scene.add(mesh);
+
+    fishEntities.push({
+      id: i,
+      type,
+      mesh,
+      x,
+      depth,
+      caught: false,
+      value: type.baseValue
+    });
+  }
+}
+
+function pickFishTypeForDepth(depth) {
+  // Simple weighted selection: filter by depth and choose randomly
+  const candidates = FishTypes.filter(
+    t => depth >= t.depthMin && depth <= t.depthMax
+  );
+  if (!candidates.length) return FishTypes[0];
+  // Optionally weight deeper ones more
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+```
+
+`createFishMesh(color)` returns a small `THREE.Mesh` (box or capsule) with given color.
+
+---
+
+## Camera & Hook Position Updates
+
+```js
+function updateHookWorldPosition() {
+  const worldY = -GameState.hookDepth;
+  HookState.mesh.position.set(GameState.hookX, worldY, 0);
+  // update line length (scale or geometry)
+}
+
+function updateCamera(dt) {
+  const targetY = HookState.mesh.position.y + 3; // slightly above hook
+  const camera = CameraState.camera;
+  const dy = targetY - camera.position.y;
+  camera.position.y += dy * Math.min(1, CameraState.followSpeed * dt);
+  camera.lookAt(0, HookState.mesh.position.y, 0);
+}
+```
+
+---
+
+## UI Management & State Transitions
+
+### HUD Swapping
+
+```js
+function showCoinHUD(show) {
+  UI.coinCounter.style.display = show ? 'block' : 'none';
+}
+
+function showFishHUD(show) {
+  UI.fishCounter.style.display = show ? 'block' : 'none';
+}
+```
+
+`updateFishCounterUI()`:
+
+```js
+function updateFishCounterUI() {
+  UI.fishCounter.textContent = GameState.fishCaughtCount + '/' + GameState.maxFish;
+  const ratio = GameState.fishCaughtCount / GameState.maxFish;
+  UI.fishProgressFill.style.width = (ratio * 100) + '%';
+}
+```
+
+### Upgrades
+
+```js
+function onUpgradeMaxFish() {
+  const nextIndex = GameState.maxFishTierIndex + 1;
+  if (nextIndex >= GameState.maxFishTiers.length) return;
+  const tier = GameState.maxFishTiers[nextIndex];
+  if (GameState.coins < tier.cost) return;
+
+  GameState.coins -= tier.cost;
+  GameState.maxFishTierIndex = nextIndex;
+  GameState.maxFish = tier.value;
+  updateCoinCounterUI();
+  updateUpgradeButtonsUI();
+}
+
+function onUpgradeMaxDepth() {
+  const nextIndex = GameState.maxDepthTierIndex + 1;
+  if (nextIndex >= GameState.maxDepthTiers.length) return;
+  const tier = GameState.maxDepthTiers[nextIndex];
+  if (GameState.coins < tier.cost) return;
+
+  GameState.coins -= tier.cost;
+  GameState.maxDepthTierIndex = nextIndex;
+  GameState.maxDepth = tier.value;
+  updateCoinCounterUI();
+  updateUpgradeButtonsUI();
+}
+```
+
+`updateUpgradeButtonsUI()` sets button labels like `"Max Fish: 7 (50🪙)"` or `"MAXED"` and disables via `button.disabled = true` when not affordable or at max.
+
+---
+
+## Gauge UI Implementation
+
+Gauge is an HTML bar:
+
+```html
+<div id="gauge">
+  <div class="gauge-track">
+    <div class="gauge-pointer"></div>
+  </div>
+</div>
+```
+
+With CSS for appearance. In JS:
+
+```js
+function updateGaugePointerUI(eased) {
+  // eased in [0,1], map to % of track width
+  UI.gaugePointer.style.left = (eased * 100) + '%';
+}
+```
+
+Pendulum motion achieved via `gaugeDirection` flipping and `easeInOutQuad`.
+
+---
+
+## Animations Implementation
+
+Animations will be implemented inside the `update` loop with simple tween-like variables.
+
+### Hook Motion
+
+- Already covered as `hookDepth` + `verticalSpeed`, updated each frame.
+
+### Fish Idle
+
+- For non-caught fish, add small side-to-side sway & up-down bob:
+
+```js
+function updateFishIdle(dt) {
+  const time = performance.now() / 1000;
+  for (const fish of fishEntities) {
+    if (fish.caught) continue;
+    const sway = Math.sin(time * 1.2 + fish.id) * 0.2;
+    fish.mesh.position.x = fish.x + sway;
+  }
+}
+```
+
+Call `updateFishIdle(dt)` from `updateGameplay`.
+
+### Catch Effect
+
+`spawnCatchPopEffect(fish)`:
+
+- Create a floating HTML element at screen position of fish/hook.
+- Use CSS transform/transition; or animate via JS time-based fade-up.
+
+Pseudocode:
+
+```js
+function spawnCatchPopEffect(fish) {
+  const screenPos = worldToScreen(fish.mesh.position);
+  const el = document.createElement('div');
+  el.className = 'catch-pop';
+  el.textContent = '+' + fish.value + (fish.type.rarityLabel ? ' ' + fish.type.rarityLabel : '');
+  el.style.left = screenPos.x + 'px';
+  el.style.top = screenPos.y + 'px';
+  document.body.appendChild(el);
+
+  // CSS handles animation, then remove after `animationend`
+}
+```
+
+`worldToScreen()` uses camera + renderer size to map 3D to 2D.
+
+### Surface Summary Animations
+
+**Per fish**:
+- While hook is at surface, fish are attached to hook.
+- Animate each fish’s local y position up and down (jump) and a small scale bounce.
+- For each fish, trigger a coin burst: create a handful of small divs around fish, animate outward + fade.
+
+**Total Count-Up**:
+- Use simple time-based interpolation from 0 → `totalRoundCoins`.
+
+```js
+let currentDisplayTotal = 0;
+
+function startTotalCountUp() {
+  currentDisplayTotal = 0;
+}
+
+function updateTotalCountUp(dt) {
+  const target = SummaryState.totalRoundCoins;
+  const speed = target / 0.6; // reach in ~0.6s
+  currentDisplayTotal += speed * dt;
+  if (currentDisplayTotal >= target) {
+    currentDisplayTotal = target;
+  }
+  UI.summaryTotalLabel.textContent = Math.floor(currentDisplayTotal);
+
+  // When reaches target, add to GameState.coins and animate coins to HUD
+  if (currentDisplayTotal === target && !SummaryState.addedToCoins) {
+    SummaryState.addedToCoins = true;
+    GameState.coins += target;
+    animateCoinsToCounter();
+  }
+}
+```
+
+`animateCoinsToCounter()` spawns a few divs at summary panel that move towards coin counter via CSS transitions or JS.
+
+---
+
+## Render Function
+
+```js
+function render() {
+  // Update any camera aspect/resizes handled elsewhere
+  renderer.render(scene, CameraState.camera);
+}
+```
+
+Any UI changes are managed by DOM updates; no extra canvas 2D rendering is required.
+
+---
+
+## Responsive & Mobile-First Layout
+
+- `#game-root` is a full-viewport container.
+- Canvas scales to fit while preserving aspect ratio (e.g. 9:16), with CSS:
+
+```css
+#game-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: linear-gradient(#4fc3f7, #01579b);
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+```
+
+- UI HUD elements use `%` placements and flex to adapt.
+- Use `@media (orientation: landscape)` rules to reposition HUD (e.g. left/right side instead of top).
+
+---
+
+## State Transition Map Summary
+
+- **LOADING**
+  - (init complete) → **GAMEPLAY/SETUP**
+
+- **GAMEPLAY / SETUP**
+  - Player taps Play → **GAMEPLAY/GAUGE**
+
+- **GAMEPLAY / GAUGE**
+  - Player taps again → lock depth, spawn fish → show fish HUD → **GAMEPLAY/CAST_DOWN**
+
+- **GAMEPLAY / CAST_DOWN**
+  - Hook reaches target depth → **GAMEPLAY/PAUSE_AT_DEPTH**
+    - If first round and tutorial not shown:
+      - Also enter **TUTORIAL** overlay for ~2s, then back to **GAMEPLAY/ASCEND**.
+
+- **GAMEPLAY / PAUSE_AT_DEPTH**
+  - Timer expires → **GAMEPLAY/ASCEND**
+
+- **GAMEPLAY / ASCEND**
+  - Player drags to catch fish.
+  - If `fishCaughtCount === maxFish`:
+    - speed up.
+  - When hookDepth ≤ 0:
+    - Switch HUD to coins → **GAMEPLAY/SURFACE_SUMMARY**
+
+- **GAMEPLAY / SURFACE_SUMMARY**
+  - After animations and total are done:
+    - If `round < 3`: round++ → **GAMEPLAY/SETUP**
+    - Else: → **ENDCARD**
+
+- **ENDCARD**
+  - Show CTA; optionally tap opens store.
+
+---
+
+## Interaction Summary & Implementation Hooks
+
+- **Tap Play (SETUP)** → starts gauge.
+- **Tap Play (GAUGE)** → stops gauge, locks depth, begins cast.
+- **Tap Upgrade buttons (SETUP only)** → change maxFish/maxDepth if enough coins.
+- **Drag on screen (ASCEND only)** → horizontal control of hook.
+- **No interaction in other phases**; all auto-animated.
+
+Each interaction is bound to small handler functions that check `GameState.currentState` and `GameState.currentPhase` to avoid invalid input.
+
+---
+
+This blueprint defines the complete architecture, entity/data layout, rendering strategy (3D/2D split), state machine, interaction handling, and per-phase logic needed to implement “Fishing In The Deep” as a high-performance, single-file HTML5 playable ad.
