@@ -1,0 +1,26 @@
+Prompts:
+
+	Planning:
+
+		Your task:
+		Read the PRD below and produce a detailed technical plan describing how to implement the playable in a single html format.
+
+		The plan should include:
+		1.  Core systems and architecture.
+		2.  Gameplay flow.
+		3.  Entities and data.
+		4.  Step by step implementation plan.
+
+		Output format: clear Markdown document.
+
+		<Product Requirements Document>
+		{{PRD_CONTENT}}
+		</Product Requirements Document>
+
+	Implementation:
+
+		Implement this game for me:
+
+		<Implamantation Plan>
+		{{Implamantation_Plan}}
+		</Implamantation Plan>
