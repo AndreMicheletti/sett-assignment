@@ -1029,7 +1029,8 @@ canvas{display:block;}
     ctx.fillStyle="rgba(0,0,0,0.55)";
     ctx.fill();
     ctx.fillStyle="#ffffff";
-    ctx.fillText("CAST!",Game.width/2,by);
+    const text = Game.state===GameState.GAUGE_AIM ? "GO!" : "CAST!";
+    ctx.fillText(text,Game.width/2,by);
 
     if(animatePointer){
       var depthRange = Game.maxDepth-Game.minDepth;
