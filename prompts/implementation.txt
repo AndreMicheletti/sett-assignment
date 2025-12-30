@@ -1,5 +1,7 @@
 Implement this game for me in a single html file.
 Output just the html content, nothing more.
+Double-check if any `import` statements are used or dependencies are required,
+and include them using latest CDN found in the internet
 
 <Implementation Plan>
 {plan}
