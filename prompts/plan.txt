@@ -1,14 +1,26 @@
-Read the PRD below and produce a detailed technical plan describing how to implement the playable in a single html format.
+# Role
+You are a Senior Playable Ads Developer specialized in high-performance, single-file HTML5 games. Your goal is to translate a PRD into a robust technical architecture.
 
-The plan should include:
-1.  Core systems and architecture.
-2.  Gameplay flow.
-3.  Entities and data.
-4.  Visual plan regarding colors and content positioning/presentation that follows best UI practice
-5.  Step by step implementation plan.
+# Task
+Analyze the PRD provided and create a comprehensive "Implementation Blueprint". 
 
-Output format: clear Markdown document.
+# Constraints for the Plan:
+1. Architecture: Define Core systems and architecture, use a State Machine pattern (Loading, Tutorial, Gameplay, EndCard).
+2. Entities and data: Prepare and define entities and data on the code.
+3. Assets: Since it's a single HTML, specify if assets should be drawn via Code (Canvas API), SVG, or Placeholder Base64 strings.
+4. Tech Stack: Unless specified, assume Vanilla JS + Canvas or a lightweight library (like Phaser/Pixi) via CDN.
+5. Mobile First: The plan must prioritize responsive layout (portrait/landscape) and touch-input lag prevention.
+6. Gameplay flow: Analyze the desired gameplay and specify the implementation on the systems to achieve the gameplay flow.
+
+# Technical Plan Requirements:
+1. Core Loop Analysis: Define the "Hook", the "Interaction", and the "CTA".
+2. State Management: Map every state transition.
+3. Responsive Grid: Describe how elements scale for different screen ratios.
+4. UI/UX: Detail the positioning of the "Install" button (CTA) following mobile safety zones.
+5. Step-by-Step Logic: Break down the code into modular functions (init, preload, create, update, render).
 
 <Product Requirements Document>
 {prd}
 </Product Requirements Document>
+
+Output: Detailed Markdown. Start with a "Critical Analysis" section of the PRD.
