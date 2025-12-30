@@ -4,7 +4,8 @@ The plan should include:
 1.  Core systems and architecture.
 2.  Gameplay flow.
 3.  Entities and data.
-4.  Step by step implementation plan.
+4.  Visual plan regarding colors and content positioning/presentation that follows best UI practice
+5.  Step by step implementation plan.
 
 Output format: clear Markdown document.
 

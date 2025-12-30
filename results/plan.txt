@@ -1,107 +1,57 @@
 ```markdown
-# Technical Implementation Plan – “Fishing In The Deep” (Single HTML)
+# Technical Implementation Plan – “Fishing In The Deep” (Single HTML Playable)
 
-This document describes how to implement the playable ad “Fishing In The Deep” as a single self-contained HTML file (HTML + inline CSS + inline JS; optional inline SVG/Canvas/WebGL). Focus is on simple 3D‑looking visuals (basic shapes / pseudo‑3D) and minimal dependencies.
+This plan targets a **single self-contained HTML file** (HTML + CSS + JS inline) suitable for a mobile/web playable ad. No external dependencies unless inlined (e.g., minimal base64 images or inline SVG). 3D visuals will be **fake-3D** using CSS transforms and gradients; no WebGL or heavy engines.
 
 ---
 
 ## 1. Core Systems & Architecture
 
-### 1.1 Overall Structure
+### 1.1 Overall Architecture
 
-Single `index.html` file containing:
+- **Single HTML file**:
+  - `<head>`: styles in `<style>`, simple meta viewport, optional basic font.
+  - `<body>`: main game container, HUD, fake-3D scene elements, overlays.
+  - `<script>`: all logic in one `<script>` tag.
 
-- `<style>` block for all CSS.
-- `<canvas id="gameCanvas">` for rendering.
-- `<div>` overlays for UI (coins, fish counter, upgrade buttons, play button, text labels).
-- `<script>` block with:
-  - Game state management.
-  - Simple “3D‑looking” rendering using either:
-    - Option A (recommended): 2D canvas with faux‑3D shapes (rectangles, gradients, perspective scaling).
-    - Option B: Minimal three.js from CDN (if allowed) with primitive 3D objects and orthographic camera.
-  - Input handling (mouse/touch).
-  - Animation loop (requestAnimationFrame).
+- **Core modules (implemented as JS objects / factory functions)**:
+  1. `GameState` – game-wide data and phase management.
+  2. `UIManager` – handles HUD, counters, upgrade buttons, gauge, tutorial texts, summary panel.
+  3. `FishingController` – manages fishing rounds, hook movement (down/up), drag control, camera following, depth mapping, and fish collection.
+  4. `FishManager` – spawns fish along the depth, handles rarity, worth, catch logic, and animations.
+  5. `AnimationManager` – `requestAnimationFrame` loop, tweens, easing helpers.
+  6. `UpgradeSystem` – upgrade purchase, cost progression, applying effects (max fish/depth).
+  7. `Effects` – coin bursts, floating text, bouncy feedback.
 
-The entire game is run via a single `Game` object that manages subsystems:
+Implement each as closures or simple ES6 classes within the script, but avoid complex bundler patterns.
 
-- `Renderer` (canvas, 2D pseudo‑3D).
-- `UIManager` (HTML UI elements, buttons, labels).
-- `RoundManager` (3 rounds, score/coins).
-- `HookSystem` (pointer gauge → hook movement → collision).
-- `FishSystem` (spawning, movement, catch logic).
-- `UpgradeSystem` (max fish, max depth).
+### 1.2 Game Loop & Timing
 
-### 1.2 Main Game Loop
+- Use **one main `requestAnimationFrame` loop** that:
+  - Computes `deltaTime`.
+  - Updates systems in order:
+    - `FishingController.update(dt)`
+    - `FishManager.update(dt)`
+    - `AnimationManager.updateTweens(dt)` (generic tween/animation bookkeeping)
+  - Renders:
+    - Update DOM transforms for hook, camera container, fish positions, coin/fish counters progress bar, etc.
+- Keep all animation durations explicit (e.g., for easing, hold times) so design tuning is easy.
 
-Use `requestAnimationFrame`:
+### 1.3 State Machine (High-Level Phases)
 
-```js
-function gameLoop(timestamp) {
-  const dt = (timestamp - lastTime) / 1000;
-  lastTime = timestamp;
+Game states (string enum in `GameState.phase`):
 
-  game.update(dt);
-  game.render();
+1. `"LOBBY"` – pre-fishing; upgrades visible; Play button + gauge active.
+2. `"GAUGE_SELECT"` – pointer moving; waiting for tap to lock depth and start fishing.
+3. `"HOOK_DESCENDING"` – hook moving down; camera following; coin counter replaced by fish counter.
+4. `"HOOK_AT_DEPTH"` – brief hold; tutorial only on first round.
+5. `"HOOK_ASCENDING"` – hook moving up; player drags horizontally; collects fish.
+6. `"RETURNING_FAST"` – hook speeds to surface after max fish reached.
+7. `"AT_SURFACE_RESOLVE"` – play fish summary animations and reward coins.
+8. `"ROUND_END"` – prepare next round or end screen if after 3rd round.
+9. `"END_SCREEN"` – final screen showing total coins and call‑to‑action (if needed).
 
-  requestAnimationFrame(gameLoop);
-}
-```
-
-`game.update(dt)` handles:
-
-- State machine transitions.
-- Pointer gauge animation.
-- Hook vertical movement.
-- Hook horizontal drag.
-- Fish movement and timers.
-- Animation timers (effects, popups).
-- UI text updates (coins, fish counter bar).
-
-`game.render()` handles:
-
-- Clear canvas.
-- Draw background (sea layers).
-- Draw static fisherman/boat at top.
-- Draw hook and line.
-- Draw fish still in water.
-- Draw any caught fish following the hook.
-- Layer any visual effects (text pops, coin bursts).
-
-### 1.3 Game States
-
-Use a simple finite state machine:
-
-```js
-const GameState = {
-  UPGRADE: 'UPGRADE',            // Between rounds
-  GAUGE_AIM: 'GAUGE_AIM',        // Pointer moving, waiting for click
-  HOOK_DESCEND: 'HOOK_DESCEND',  // Hook going down
-  HOOK_WAIT_AT_DEPTH: 'HOOK_WAIT_AT_DEPTH', // Pause (with tutorial on round 1)
-  HOOK_ASCEND: 'HOOK_ASCEND',    // Hook rising, player can drag
-  HOOK_ASCEND_FAST: 'HOOK_ASCEND_FAST', // Max fish reached, fast to surface
-  SURFACE_SUMMARY: 'SURFACE_SUMMARY',   // Per-fish animation
-  ROUND_SUMMARY: 'ROUND_SUMMARY',       // Total coins, fly to counter
-  END_SCREEN: 'END_SCREEN'             // After 3 rounds
-};
-```
-
-State transitions drive when UI elements show/hide and what input is active.
-
-### 1.4 Coordinate System & Camera
-
-To simulate depth scrolling:
-
-- World Y coordinate increases downwards:
-  - `y=0` surface (boat).
-  - Depth in meters corresponds to `y = depth * depthScale` (e.g., `depthScale = 30 px/m`).
-- Camera is a vertical offset:
-  - `cameraY` is interpolated to follow hook’s `y`.
-  - Render objects at `screenY = worldY - cameraY`.
-
-Hook depth selection from gauge:
-
-- Gauge result → `targetDepthMeters` between `[maxDepth - 2, maxDepth]`.
-- Hook’s `targetY = targetDepthMeters * depthScale`.
+`GameState.round` goes from `1` to `3`.
 
 ---
 
@@ -109,628 +59,635 @@ Hook depth selection from gauge:
 
 ### 2.1 Initial Setup
 
-- Start with:
+- Start on `"LOBBY"`:
   - `coins = 100`.
-  - `round = 1`.
   - `maxFish = 6`.
   - `maxDepth = 5` (meters).
-- Visible UI:
-  - Coin counter: `100`.
-  - Upgrades UI: “Max Fish”, “Max Depth” with current level and next cost.
-  - Play button with gauge (pointer idle/disabled until upgrades resolved).
-- Fish counter hidden.
+  - `caughtFishThisRound = []`.
+  - Gauge pointer set to start position.
+  - fish counter hidden; coin counter visible.
 
-### 2.2 Upgrade Phase (Between Rounds)
+### 2.2 Pre-Fishing (Lobby Flow)
 
-State: `UPGRADE`
+1. Player sees:
+   - Coin counter (“100” + coin icon).
+   - Upgrade panel:
+     - **Max Fish**: shows current (6) and next (7 for 50🪙).
+     - **Max Depth**: shows current (5m) and next (10m for 50🪙).
+   - Play button with gauge under/above it.
 
-- Player may tap upgrade buttons:
-  - **Max Fish levels**:
-    - Start: 6.
-    - Upgrades: 7 (50🪙), 8 (100🪙), 9 (200🪙), 10 (400🪙).
-  - **Max Depth levels**:
-    - Start: 5m.
-    - Upgrades: 10m (50🪙), 15m (75🪙), 20m (150🪙), 30m (300🪙).
-- Deduct coins immediately on purchase.
-- Disable upgrade button if:
-  - Player can't afford.
-  - Already at max tier.
-- “Play” button enabled at all times.
-- When player presses “Play”:
-  - Switch to `GAUGE_AIM`.
+2. Player may:
+   - Tap `Max Fish` upgrade:
+     - If coins ≥ cost and not at max level:
+       - Deduct coins, increase `maxFish`.
+       - Next tier cost & label updated.
+       - Disable/badge as max when 10 fish reached.
+   - Tap `Max Depth` upgrade:
+     - Similar logic up to 30m.
 
-### 2.3 Gauge & Depth Selection
+3. Tap **Play** (or anywhere on gauge):
+   - Transition to `"GAUGE_SELECT"`.
+   - Pointer starts pendulum movement automatically if not already moving.
 
-State: `GAUGE_AIM`
+### 2.3 Gauge to Depth Mapping
 
-- Pointer moves in pendulum motion across bar:
-  - Normalized `t` moves in `[0,1]` then reverses, easing at ends.
-  - Map `t` to actual depth:
-    - `depthRange = 2` meters (maxDepth - 2).
-    - `targetDepthMeters = maxDepth - 2 + 2 * t` (clamped to [maxDepth-2, maxDepth]).
-- UI:
-  - Coin counter visible.
-  - Fish counter hidden.
-- Once player taps the Play button:
-  - Lock in `targetDepth`.
-  - Initialize hook at surface (`hookY = 0`).
-  - Spawn fish field (if not already persistent).
-  - Switch to `HOOK_DESCEND`.
-  - Swap UI:
-    - Hide coin counter.
-    - Show fish counter: 0 / maxFish, with empty progress bar.
+- Gauge logic:
+  - Pointer oscillates between 0% and 100% with sine-based easing at ends.
+  - When player taps during `"GAUGE_SELECT"`:
+    - `normalized = pointerPosition` in [0, 1].
+    - Depth range: `[maxDepth - 2, maxDepth]` (clamped to >= 0).
+    - `selectedDepth = (maxDepth - 2) + normalized * 2`.
+  - Pass `selectedDepth` to `FishingController.startFishingRound(depth)`.
 
-### 2.4 Hook Descent
+### 2.4 Hook Descending
 
-State: `HOOK_DESCEND`
+1. On start:
+   - Phase -> `"HOOK_DESCENDING"`.
+   - Hide coin counter, show fish counter:
+     - Counter starts at 0 / `maxFish`.
+     - Progress bar from 0% filled.
+   - Setup fish field based on `maxDepth` (see FishManager below).
 
-- Hook moves from `y=0` to `targetY`.
-  - Constant or eased velocity.
-- Camera:
-  - `cameraY` follows hook with smoothing.
-- Input:
-  - No horizontal drag yet (hook falls straight).
-- When hook reaches `targetY`:
-  - Move to `HOOK_WAIT_AT_DEPTH`.
-  - Start pause timer (1st round longer).
+2. Hook:
+   - Initial position near water surface (y=0).
+   - Target position at `selectedDepth` (convert meters to y coordinates).
+   - Camera container (scene wrapper) moves with hook vertically to simulate camera following.
+   - Animate downward over a fixed time derived from depth (e.g., `time = base + k*depth`).
 
-### 2.5 Pause at Depth
+### 2.5 Hook At Depth
 
-State: `HOOK_WAIT_AT_DEPTH`
+- When hook reaches target:
+  - `phase = "HOOK_AT_DEPTH"`.
+  - Hold for:
+    - First round: 2s and show tutorial text “Drag to move hook and catch fish”.
+    - Other rounds: 0.5–1s without tutorial.
+- After wait, automatically transition to `"HOOK_ASCENDING"`.
 
-- Timer:
-  - `pauseDuration`:
-    - Round 1: ~2.0s.
-    - Rounds 2–3: 0.5–1.0s.
-- Round 1 only:
-  - Overlay text near hook: “Move the hook to catch fish”.
-  - It fades/disappears when pause completes.
-- At end of pause:
-  - Switch to `HOOK_ASCEND`.
+### 2.6 Hook Ascending & Player Control
 
-### 2.6 Hook Ascent & Catching Fish
+1. Ascend:
+   - Hook moves up at a fixed speed from `selectedDepth` back to surface (y=0).
+   - Vertical motion auto-driven.
+2. Player control:
+   - Horizontal movement via pointer/touch:
+     - On `touchstart/mousedown`, record starting x.
+     - On move events, set hook x within allowed range (clamped).
+   - Optionally smooth horizontal following (lerp) for better feel.
+3. Fish catching:
+   - Every frame, check each fish:
+     - If fish not already caught and:
+       - |fish.x - hook.x| < catchThresholdX AND |fish.y - hook.y| < catchThresholdY
+     - Mark fish caught:
+       - Attach fish DOM under hook (or visually move fish to hook position; can offset to “stack”).
+       - Calculate its value & rarity.
+       - Increment fish counter.
+       - Update progress bar (caught / `maxFish`).
+       - Trigger catch feedback:
+         - Small scale bounce of hook+fish.
+         - Floating text: `+<value>` and any rarity tag (“RARE!”, etc.).
+   - When `caughtCount == maxFish`:
+     - Immediately transition to `"RETURNING_FAST"`.
 
-State: `HOOK_ASCEND`
+### 2.7 Return Fast to Surface
 
-- Hook moves up from `targetY` toward surface (`y=0`).
-- Player input:
-  - Drag left/right to move hook horizontally (within limits).
-  - Implementation:
-    - On pointer down (mousedown/touchstart) over canvas → capture pointer.
-    - Track delta `dx` and apply to `hookX`.
-    - Clamp hook’s X within world bounds.
-- Collision detection:
-  - For each fish not yet caught:
-    - If distance between fish position and hook < catch radius, then:
-      - Mark fish as caught.
-      - Attach fish to hook (store offset).
-      - Add to `caughtFish` list.
-      - Increase fish counter:
-        - `caughtCount += 1`.
-        - Progress bar fill = `caughtCount / maxFish`.
-      - Play catch effect:
-        - Bouncy popup of fish value at fish position.
-        - Optional tag text like “Rare!” based on fish rarity.
-- When fish is caught:
-  - Show a quick number popup: `+<value>` above hook or fish.
-- When `caughtCount >= maxFish`:
-  - Switch to `HOOK_ASCEND_FAST`.
+- `"RETURNING_FAST"`:
+  - Increase ascent speed (e.g., 2–3x).
+  - Disable further fish collisions (ignore).
+  - Just before reaching surface (e.g., y <= small threshold):
+    - Swap fish counter back to coin counter (but don’t yet update coins).
+- On reaching surface (y=0):
+  - Phase -> `"AT_SURFACE_RESOLVE"`.
 
-### 2.7 Fast Ascent to Surface
+### 2.8 At Surface – Result & Rewards
 
-State: `HOOK_ASCEND_FAST`
+1. Summary animations:
+   - For each fish in `caughtFishThisRound`:
+     - Animate its icon (cloned or moved) with a small jump/bounce.
+     - Show floating text:
+       - `+value` near fish.
+       - Additional label if rarity.
+     - `Coins burst`: small circle/coin sprites that fly outward and fade.
+   - Calculate `roundTotal` (sum of fish values).
 
-- Hook quickly moves to surface:
-  - Increased vertical speed.
-  - Disable further collision checks.
-- Just before reaching surface:
-  - Swap UI:
-    - Hide fish counter.
-    - Show coin counter (still showing pre-round coin total; final addition comes in summary).
-- When hook reaches surface:
-  - Move to `SURFACE_SUMMARY`.
+2. Final summary:
+   - Show summary box overlay:
+     - Title: “Catch Summary”.
+     - List of fish types and values or just a single total for simplicity.
+     - A big `+roundTotal` count up animation.
+     - “Coins fly” effect:
+       - Animated small coin elements move from summary total to the coin counter position.
+   - Update `GameState.coins += roundTotal`.
 
-### 2.8 Per-Fish Surface Summary
-
-State: `SURFACE_SUMMARY`
-
-- Camera returns to surface (`cameraY → 0`).
-- The hooked fish appear near fisherman / on deck.
-- Animations:
-  - For each fish (sequence or slight stagger):
-    - Jump/bounce animation (scale/position).
-    - Display its coin value.
-    - If fish has rarity/attaboy text (e.g., “Rare!”, “Amazing!”, “Legendary!”), show it near the fish.
-    - Play coin burst effect:
-      - Simple radial burst of small coin sprites around fish.
-- Keep running total for this round:
-  - `roundCoins = sum(fish.value)`.
-- After all fish animations are finished:
-  - Switch to `ROUND_SUMMARY`.
-
-### 2.9 Round Summary & Coin Fly Animation
-
-State: `ROUND_SUMMARY`
-
-- Show a summary UI (e.g. centered overlay):
-  - “Total catch: X coins”.
-  - Slight counter animation:
-    - Animate number from 0 → `roundCoins`.
-- Coin fly animation:
-  - A few coin icons animate from summary text to the coin counter position.
-  - On complete:
-    - Add `roundCoins` to `coins`.
-    - Update coin counter text.
-- Clean up:
-  - Clear `caughtFish` list.
-  - Optionally respawn fish or reset fish positions for next cast.
-- Check round:
-  - If `round < 3`:
-    - `round++`.
-    - Switch to `UPGRADE`.
-  - Else:
-    - Switch to `END_SCREEN`.
-
-### 2.10 End Screen
-
-State: `END_SCREEN`
-
-- Show final total coins and “Play Again” or “Install Now” CTA (depending on needs).
-- Consider:
-  - A summary of upgrades chosen or best catch.
-- For “Play Again”:
-  - Reset game variables to initial state and return to `UPGRADE`.
+3. After animations:
+   - Hide summary overlay.
+   - If `round < 3`:
+     - Increment `round`.
+     - Reset hook, fish, UI.
+     - Go back to `"LOBBY"`.
+   - Else:
+     - Transition to `"END_SCREEN"`:
+       - Show final coins and message (e.g., “You earned X coins in 3 casts!”).
+       - Optionally a CTA button (e.g., “Play Full Game”).
 
 ---
 
 ## 3. Entities & Data
 
-### 3.1 Core Data Structures
-
-#### Game State
+### 3.1 Game State Data Structure
 
 ```js
-const gameState = {
-  currentState: GameState.UPGRADE,
+const GameState = {
+  phase: 'LOBBY',
   round: 1,
   maxRounds: 3,
 
   coins: 100,
-  roundCoins: 0,
-
-  // Upgrades
   maxFish: 6,
-  maxDepth: 5,
-  maxFishLevel: 0,   // index into tiers
-  maxDepthLevel: 0,
+  maxDepth: 5, // in meters
 
-  // Gauge
-  gaugeProgress: 0,  // 0..1
-  gaugeDirection: 1, // 1 or -1
-  gaugeSpeed: 0.7,   // normalized per second
+  // Upgrades definitions
+  fishUpgradeLevels: [6, 7, 8, 9, 10],
+  fishUpgradeCosts: [0, 50, 100, 200, 400],
+  depthUpgradeLevels: [5, 10, 15, 20, 30],
+  depthUpgradeCosts: [0, 50, 75, 150, 300],
+  currentFishUpgradeIndex: 0,
+  currentDepthUpgradeIndex: 0,
 
-  // Hook
-  hookX: 0,
-  hookY: 0,
-  hookTargetY: 0,
-  hookSpeedDown: 200,
-  hookSpeedUp: 150,
-  hookSpeedUpFast: 400,
-  caughtFish: [],          // array of Fish
-  hookMaxFishThisRound: 0, // copy of maxFish at begin round
-
-  // Camera
-  cameraY: 0,
-
-  // Timers
-  pauseTimer: 0,
-  tutorialShown: false
+  // Round data
+  selectedDepth: 0,
+  caughtFishThisRound: [], // array of FishEntity
 };
 ```
 
-#### Upgrades Config
-
-```js
-const maxFishTiers = [
-  { value: 6, cost: 0 },
-  { value: 7, cost: 50 },
-  { value: 8, cost: 100 },
-  { value: 9, cost: 200 },
-  { value: 10, cost: 400 }
-];
-
-const maxDepthTiers = [
-  { value: 5, cost: 0 },
-  { value: 10, cost: 50 },
-  { value: 15, cost: 75 },
-  { value: 20, cost: 150 },
-  { value: 30, cost: 300 }
-];
-```
-
-#### Fish Entity
+### 3.2 Fish Entity
 
 ```js
 class Fish {
-  constructor(x, y, depthMeters, rarity) {
-    this.x = x;
-    this.y = y;
-    this.depthMeters = depthMeters;
-    this.rarity = rarity;  // 'common', 'rare', 'legendary', etc.
-    this.value = this.computeValue();
+  constructor(opts) {
+    this.id = opts.id;
+    this.type = opts.type; // 'common' | 'rare' | 'epic' | 'legendary'
+    this.value = opts.value; // coins
+    this.depth = opts.depth; // meter
+    this.x = opts.x; // scene units
+    this.y = opts.y; // scene units (derive from depth)
     this.caught = false;
-    this.attachedOffsetX = 0; // relative to hook when caught
-    this.attachedOffsetY = 0;
-
-    // For swimming animation
-    this.baseX = x;
-    this.swimPhase = Math.random() * Math.PI * 2;
-  }
-
-  computeValue() {
-    // Example: value increases with depth & rarity
-    let base = 5 + Math.floor(this.depthMeters * 0.8);
-    if (this.rarity === 'rare') base *= 2;
-    if (this.rarity === 'legendary') base *= 4;
-    return base;
+    this.dom = opts.domElement; // reference to DOM element
   }
 }
 ```
 
-#### Rarity & Attaboys
+- **Type → Rarity mapping**:
+  - `common`: shallow, small value, frequent.
+  - `rare`: deeper, moderate value.
+  - `amazing`/`epic`: deeper, high value, lower chance.
+  - `legendary`: deepest ranges, high value, low chance.
+- Probability distribution changes with depth:
+  - For each fish spawn, choose type based on `depth`:
+    - 0–10m: mostly common, small chance rare.
+    - 10–20m: mix of common, rare, some amazing.
+    - 20–30m: more rare, amazing, small chance legendary.
 
-Define depth-dependent rarity probabilities and labels:
+### 3.3 Fish Field Generation
 
-```js
-const rarityConfig = [
-  // [minDepth, maxDepth, {common, rare, legendary}]
-  { min: 0, max: 10, probs: { common: 0.85, rare: 0.15, legendary: 0.0 } },
-  { min: 10, max: 20, probs: { common: 0.70, rare: 0.25, legendary: 0.05 } },
-  { min: 20, max: 40, probs: { common: 0.50, rare: 0.35, legendary: 0.15 } }
-];
-
-const rarityLabels = {
-  rare: 'Rare!',
-  legendary: 'Legendary!',
-  amazing: 'Amazing!' // could be used for high-value threshold
-};
-```
-
-Attaboy determination example:
-
-```js
-function getAttaboyForFish(fish) {
-  if (fish.rarity === 'legendary') return 'Legendary!';
-  if (fish.rarity === 'rare') return 'Rare!';
-  if (fish.value > 50) return 'Amazing!';
-  return null;
-}
-```
-
-### 3.2 UI Elements
-
-All defined in HTML, referenced in JS by ID:
-
-- `#coinCounter`: Shows current coins (text).
-- `#fishCounterContainer`:
-  - `#fishCountText`: `caught / maxFish`.
-  - `#fishProgressFill`: inner div with width `%`.
-- `#upgradeMaxFishBtn`, `#upgradeMaxDepthBtn`: upgrade buttons.
-  - Optional child spans for cost & value.
-- `#playButton`: triggers gauge & round start.
-- `#gaugeBar`, `#gaugePointer`: visual gauge elements.
-- `#tutorialText`: hidden label for tutorial.
-- `#summaryOverlay`, `#summaryText`: round summary UI.
-- `#endScreen`, `#finalCoinsText`, `#playAgainBtn`: final screen.
-
-Visibility toggled via a helper:
-
-```js
-function showElement(id, show) {
-  document.getElementById(id).style.display = show ? 'block' : 'none';
-}
-```
+- Before each round:
+  - `FishManager.generateField(maxDepth)`:
+    - Decide total fish count based on depth (e.g., 15–30 fish).
+    - For each fish:
+      - Random depth in [0, maxDepth].
+      - Map to vertical coordinate.
+      - Random horizontal x in [-maxX, maxX].
+      - Choose rarity by probability vs depth.
+      - Value by rarity (e.g., common=5–10, rare=15–25, amazing=30–40, legendary=50+).
+      - Create DOM element styled accordingly and append to scene container.
 
 ---
 
-## 4. Step-by-Step Implementation Plan
+## 4. Visual Plan (Layout, Colors, Presentation)
 
-### Step 1 – Basic HTML Skeleton
+### 4.1 Overall Layout
 
-1. Create `index.html`.
-2. Add:
-   - `<canvas id="gameCanvas"></canvas>`.
-   - Container `<div id="ui">` for HUD and buttons.
-3. Within UI:
-   - `#coinCounter`
-   - `#fishCounterContainer` with count text and progress bar.
-   - `#upgradePanel` with two buttons.
-   - `#playButton`, `#gaugeBar`, `#gaugePointer`.
-   - `#tutorialText`.
-   - `#summaryOverlay`.
-   - `#endScreen`.
-4. Ensure the whole game is responsive, but you can define a fixed game area (e.g., 720x1280) and scale canvas with CSS.
+- **Aspect Ratio**: Aim for 9:16 (mobile portrait). Use a central container with `max-width` and `max-height` in viewport units.
 
-### Step 2 – CSS Layout & Styling
+- **Main areas**:
+  - Top HUD:
+    - Left: Round indicator (optional).
+    - Center: Main counter (coins or fish, depending on phase).
+    - Right: Potential mute icon (optional).
+  - Middle Scene:
+    - Water area with gradient background.
+    - Hook from top, fish within water.
+    - Fisherman boat silhouette on surface for context (simple rectangle/triangles).
+  - Bottom Controls:
+    - Gauge + Play button.
+    - Upgrade buttons above or side of Play, but within thumb reach.
 
-1. Set body to fill screen, no scroll, center the game container.
-2. Set canvas to fixed internal resolution, scale to fit parent.
-3. Style:
-   - Coin counter at top-left.
-   - Fish counter replacing coin counter in same location.
-   - Upgrades panel at bottom.
-   - Play button & gauge at center bottom.
-   - Summary overlay centered, semi-transparent background.
-   - End screen overlay full-screen.
-4. Basic visuals:
-   - Gauge as a horizontal bar with gradient/rounded corners.
-   - Pointer a small vertical rectangle or triangle.
-   - Progress bar as colored bar inside container.
+### 4.2 Color Palette (Friendly, Clear Contrast)
 
-### Step 3 – Canvas & Renderer Setup
+- Background:
+  - Water gradient: `#0f3057` (deep) to `#0099cc` (near surface).
+  - Sky: lighter gradient above waterline, `#87ceeb` to `#e0f7ff`.
+- HUD:
+  - Panels: semi-transparent dark (`rgba(0,0,0,0.4)`) with rounded corners.
+  - Text: white `#ffffff` with slight shadow for readability.
+- Coins:
+  - Icon + burst: gold `#f5c542` with darker rim `#c79224`.
+- Fish:
+  - Common: neutral blues/greens (`#4db6ac`, `#64b5f6`).
+  - Rare: warm accent (`#ff9800`).
+  - Amazing: bright violet (`#ab47bc`).
+  - Legendary: gold/teal (`#ffd700`, `#26c6da`).
+- Gauge:
+  - Background track: `#1a237e` with subtle inner shadow.
+  - Fill/indicator: `#ffeb3b` for pointer, minor glow.
 
-1. In JS:
-   - Get canvas, set its width/height (e.g., `480x800`).
-   - Get `ctx = canvas.getContext('2d');`.
-2. Implement `resize()` if you want responsive scaling (optional).
-3. Implement `Renderer` class or module:
-   - `clear()`: fill background with gradient (light blue → dark blue).
-   - `drawBoatAndFisherman()`: simple rectangles/circles at surface (y=0).
-   - `drawHook(hookX, hookY)`: line from boat down to hook, circle/rectangle as hook.
-   - `drawFish(fish)`: simple ellipses/rectangles with small fins; scale slightly based on depth or rarity.
-   - `drawEffects()`: temporary for later.
+### 4.3 Visual Hierarchy & Placement
 
-### Step 4 – Game State & Loop
+- **Counters**:
+  - Top center, large num with icon:
+    - State A: Coins:
+      - Icon: coin glyph or simple circle.
+      - Label: none or subtle “Coins”.
+    - State B: Fish:
+      - Fish icon and “X / maxFish”.
+      - Under it a thin progress bar (2–3px height) with rounded ends showing catch progress.
+- **Gauge & Play**:
+  - Position gauge horizontally at bottom center.
+  - Place Play button just above gauge center:
+    - When resting: text “CAST” or “PLAY”.
+    - When pointer moving: entire area is clickable.
+- **Upgrades**:
+  - Two rectangular buttons above the gauge or side by side:
+    - Left: “Max Fish”.
+    - Right: “Max Depth”.
+  - Each shows:
+    - Current value (e.g., “Max Fish: 6”).
+    - Next tier cost (small text with coin icon “Next: 7 (50🪙)”).
+  - Disabled state: dimmed + “MAX” label when no more upgrades.
 
-1. Initialize `gameState` and config constants.
-2. Implement `game.update(dt)`:
-   - Switch on `currentState`.
-   - For each state, implement behavior (hook movement, timers).
-3. Implement `game.render()`:
-   - `renderer.clear()`.
-   - `renderer.setCamera(game.cameraY)` or pass cameraY into render functions.
-   - Draw sea background relative to camera.
-   - Draw boat/fisherman at top.
-   - Draw fish (only those not caught).
-   - Draw hook & caught fish attached.
-4. Start main loop:
+### 4.4 Fake 3D Look
+
+- Fisherman/boat:
+  - Boat: simple trapezoid with perspective using CSS transform (`rotateX`, `skew`).
+  - Fisherman: stacked rectangles/circles.
+- Hook:
+  - Vertical line (`div` with background) plus small rectangle or triangle as hook.
+  - Slight drop shadow and gradient to suggest volume.
+- Fish:
+  - Simple rounded rectangles/ovals with fins as small triangles.
+  - Use gentle rotation and scale to simulate depth variation.
+  - Some vertical bobbing animation via CSS keyframes.
+
+### 4.5 Feedback Effects
+
+- When catching fish:
+  - Quick scale-up then down (0.15–0.2s) on hook container.
+  - Floating text (value + “RARE!” etc.) rising ~30px and fading.
+- Summary coins:
+  - Small coin circles that move from fish to top coin counter.
+- Tutorial label:
+  - Center overlay near hook depth:
+    - Rounded rectangle with text “Drag to move the hook and catch fish”.
+    - Semi-transparent dark background with white text.
+
+---
+
+## 5. Step-by-Step Implementation Plan
+
+### 5.1 HTML Skeleton
+
+1. Create minimal HTML:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport"
+        content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Fishing In The Deep</title>
+  <style>
+    /* (Implement from CSS plan; see below) */
+  </style>
+</head>
+<body>
+  <div id="game-root">
+    <!-- HUD -->
+    <div id="hud">
+      <div id="round-indicator"></div>
+      <div id="main-counter">
+        <span id="counter-icon"></span>
+        <span id="counter-value"></span>
+      </div>
+    </div>
+
+    <!-- Scene -->
+    <div id="scene-container">
+      <div id="sky"></div>
+      <div id="water">
+        <div id="boat"></div>
+        <div id="camera">
+          <div id="hook"></div>
+          <div id="fish-layer"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls">
+      <div id="upgrades">
+        <button id="btn-upgrade-fish"></button>
+        <button id="btn-upgrade-depth"></button>
+      </div>
+      <div id="gauge-container">
+        <div id="gauge-track">
+          <div id="gauge-pointer"></div>
+        </div>
+        <button id="btn-play">CAST</button>
+      </div>
+    </div>
+
+    <!-- Fish counter bar (under main counter) -->
+    <div id="fish-progress" class="hidden">
+      <div id="fish-progress-fill"></div>
+    </div>
+
+    <!-- Overlays -->
+    <div id="tutorial-overlay" class="hidden"></div>
+    <div id="summary-overlay" class="hidden">
+      <div id="summary-content">
+        <div id="summary-title"></div>
+        <div id="summary-amount"></div>
+        <button id="summary-continue-btn">Next</button>
+      </div>
+    </div>
+
+    <div id="end-screen" class="hidden">
+      <div id="end-title">Fishing Complete!</div>
+      <div id="end-coins"></div>
+      <button id="end-cta">Play Full Game</button>
+    </div>
+  </div>
+
+  <script>
+    // (JS logic to be implemented)
+  </script>
+</body>
+</html>
+```
+
+### 5.2 CSS Implementation
+
+2. Define base styles:
+   - `body, html` full-viewport; center `#game-root`; no scroll; background dark.
+3. `#game-root`:
+   - Fixed aspect ratio using `height: 100vh; width: 100vw;` and `max-width: 600px` for mobile; center with margin auto.
+   - Position `relative; overflow: hidden`.
+4. HUD:
+   - `position: absolute; top: 0; width: 100%; display: flex; justify-content: center; padding: 8px`.
+   - Stylize `#main-counter` as a pill with icon and number.
+   - `#fish-progress` placed under counter with slim bar.
+5. Scene:
+   - `#scene-container` takes middle area.
+   - `#water` with vertical gradient, `position: relative; overflow: hidden`.
+   - `#camera` absolute container to move vertically.
+   - `#hook` as tall narrow `div` with a small bottom hook shape.
+   - `#fish-layer` holds fish; children positioned absolute.
+6. Controls:
+   - `#controls` anchored bottom, `display: flex; flex-direction: column; align-items: center; gap: 8px;`.
+   - Upgrade buttons side-by-side; style with icon and text.
+   - Gauge:
+     - `#gauge-track` relative, full width, 8–10px height, border-radius big.
+     - `#gauge-pointer` small circular or vertical bar, absolutely positioned.
+     - `#btn-play` overlaying or just above.
+7. Overlays:
+   - `#tutorial-overlay`, `#summary-overlay`, `#end-screen` as `position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5);`.
+   - Inner content boxes with padding and rounded corners.
+8. Helpers:
+   - `.hidden { display: none; }`
+   - `.fade-in` / `.fade-out` optional transitions.
+
+### 5.3 JavaScript – Initialization
+
+3. In `<script>`:
+   - Grab DOM elements via `document.getElementById`.
+   - Initialize `GameState` as described.
+   - Create modules:
+
+```js
+const UIManager = (function() {
+  // cache DOM refs
+  // functions: updateCounters(), showFishCounter(), showCoinCounter(), updateUpgrades(), showTutorial(), showSummary(), showEndScreen()
+  return { /* public methods */ };
+})();
+
+const FishManager = (function() {
+  let fishes = [];
+  function generateField(maxDepth) { /* create Fish DOMs, push to fishes */ }
+  function reset() { /* remove DOMs, clear array */ }
+  function getFishes() { return fishes; }
+  return { generateField, reset, getFishes };
+})();
+
+const FishingController = (function() {
+  // state: hookY, hookX, targetDepth, verticalSpeed, phase-specific flags
+  // functions: startRound(depth), update(dt), handlePointerMove
+  return { startRound, update, onPointerDown, onPointerMove, onPointerUp };
+})();
+
+const UpgradeSystem = (function() {
+  function tryUpgradeFish() { /* cost check, state update, UIManager update */ }
+  function tryUpgradeDepth() { /* same */ }
+  return { tryUpgradeFish, tryUpgradeDepth };
+})();
+```
+
+4. Attach event listeners:
+   - `btn-play` click → start gauge / lock gauge depending on phase.
+   - `btn-upgrade-fish` click → `UpgradeSystem.tryUpgradeFish()`.
+   - `btn-upgrade-depth` click → `UpgradeSystem.tryUpgradeDepth()`.
+   - `summary-continue-btn` → advance round/end.
+   - `end-cta` → stub or analytic event.
+   - Scene pointer events:
+     - Attach `touchstart/mousedown` on `scene-container` during `"HOOK_ASCENDING"`; pass to `FishingController`.
+
+### 5.4 Gauge Logic Implementation
+
+5. Gauge:
+   - Maintain:
+     - `let gaugeTime = 0;`
+     - `let gaugeDirection = 1;` (left-right)
+   - In main update loop when `GameState.phase === 'GAUGE_SELECT'`:
+     - `gaugeTime += dt * speed;`
+     - Use simple ping-pong:
+       - `progress = (Math.sin(gaugeTime) + 1) / 2;` or manual reversal when reaching 0/1.
+   - Apply to DOM:
+     - `gaugePointer.style.left = (progress * 100) + '%';`
+   - On play button click when in `"LOBBY"`:
+     - Set `GameState.phase = 'GAUGE_SELECT'`.
+   - On second click/tap (or same button) when `"GAUGE_SELECT"`:
+     - Lock `progress`, map to depth, `FishingController.startRound(selectedDepth)`.
+
+### 5.5 FishingController – Movement & Phases
+
+6. Implement `startRound(depth)`:
+   - Store `GameState.selectedDepth = depth`.
+   - Set `hookY = 0; targetHookY = depthToY(depth);`.
+   - Reset hookX to center.
+   - `FishManager.generateField(GameState.maxDepth)`.
+   - Switch counters: `UIManager.showFishCounter(GameState.maxFish)`.
+   - `GameState.caughtFishThisRound = [];`
+   - `GameState.phase = 'HOOK_DESCENDING'`.
+
+7. Update function:
+   - `if phase === 'HOOK_DESCENDING'`:
+     - Move `hookY` towards `targetHookY` with speed.
+     - Move `camera` DOM: `camera.style.transform = 'translateY(' + (-hookY) + 'px)'`.
+     - On reaching target (check small threshold), set timer and phase `"HOOK_AT_DEPTH"`; call `UIManager.maybeShowTutorial(round===1)`.
+   - `if phase === 'HOOK_AT_DEPTH'`:
+     - Decrease hold timer; when ≤ 0:
+       - `GameState.phase = 'HOOK_ASCENDING'`.
+   - `if phase === 'HOOK_ASCENDING'`:
+     - Move `hookY` upwards (decreasing).
+     - Update `camera` accordingly.
+     - Check for collisions with fishes from `FishManager.getFishes()`.
+     - If fish caught count == `GameState.maxFish` → `GameState.phase = 'RETURNING_FAST'`.
+     - If hookY >= 0 (surface) with < max fish (happens if player missed) → treat equivalent to finishing; send to `"AT_SURFACE_RESOLVE"`.
+   - `if phase === 'RETURNING_FAST'`:
+     - Increase vertical speed; ignore collisions.
+     - When near surface, `UIManager.showCoinCounter()`.
+     - On surface, `GameState.phase = 'AT_SURFACE_RESOLVE'` and `UIManager.showSummary(...)`.
+   - `if phase === 'AT_SURFACE_RESOLVE'`:
+     - Most logic is in UIManager animations; once done, call back to game to proceed.
+
+8. Hook drag input:
+   - On pointer down: record lastX.
+   - On move: compute deltaX; set `hookX = clamp(hookX + delta, minX, maxX)`; apply DOM transform to hook container (`translateX`).
+   - On up: stop.
+
+### 5.6 FishManager – Spawning & Catch Logic
+
+9. `generateField(maxDepth)`:
+   - Remove old fishes.
+   - Number of fish e.g. `const count = Math.round(maxDepth * 2) + 10;`.
+   - For i in [0..count):
+     - `depth = random(0, maxDepth); y = depthToY(depth)` with some noise.
+     - `x = random(minX, maxX)`.
+     - Determine rarity:
+       - `if depth < 8` → mostly common.
+       - `if depth between 8–18` → mix.
+       - `if depth > 18` → more rare+legendary.
+     - Create `div` for fish:
+       - Absolute position with `transform: translate(x, y)`.
+       - Add class by rarity for color.
+     - Create `Fish` instance and push to array.
+
+10. Catch detection (in FishingController):
+   - `for each fish`:
+     - If not `caught` and distance threshold, then:
+       - `fish.caught = true`;
+       - Push to `GameState.caughtFishThisRound`.
+       - Move `fish.dom` under `hook`:
+         - `hook.appendChild(fish.dom);`
+         - Apply an offset so multiple fish are visible.
+       - Trigger `Effects.onFishCaught(fish)`:
+         - Floating text and bounce.
+
+### 5.7 UI & Effects Implementation
+
+11. `UIManager`:
+   - `updateCounters()`:
+     - If in coin mode:
+       - `counter-icon` = coin icon; `counter-value` = `GameState.coins`.
+     - If in fish mode:
+       - `counter-icon` = fish icon; `counter-value` = `caughtFish / maxFish`.
+   - `showFishCounter(maxFish)`:
+     - Show fish progress bar; set fill to 0%.
+   - `updateFishProgress(caught, max)`:
+     - `fillWidth = (caught/max) * 100%`.
+   - `showCoinCounter()`:
+     - Hide fish progress; display coins again using current `GameState.coins`.
+   - `updateUpgrades()`:
+     - If upgrade possible, show cost; else “MAX” and disabled class.
+   - `maybeShowTutorial(isFirstRound)`:
+     - If `true`, show `tutorial-overlay` with message and timed fade-out.
+
+12. Summary overlay:
+   - `showSummary(caughtFish)`:
+     - Compute total; store `roundTotal`.
+     - Simple UI: show big `+roundTotal` and maybe small list if space.
+     - Animate number counting from 0 to `roundTotal` over ~0.7s.
+     - On complete, call `Effects.flyCoinsToCounter(roundTotal, onComplete)`.
+   - On coins fly completion:
+     - Increment `GameState.coins`.
+     - `UIManager.updateCounters()`.
+     - Show “Next” button; clicking triggers `advanceRound()`.
+
+13. `Effects`:
+   - Methods:
+     - `onFishCaught(fish)`:
+       - Create text element near hook with `+fish.value` and label (rare/amazing/legendary).
+       - Animate upward and fade; remove after.
+       - Slightly scale hook up & down.
+     - `flyCoinsToCounter(amount, onComplete)`:
+       - Spawn few coin elements at summary text position.
+       - Animate them toward top HUD position by computing difference in screen coords (use `getBoundingClientRect()` once).
+       - On end, call `onComplete`.
+
+### 5.8 Rounds & End Screen
+
+14. After summary complete:
+   - `if GameState.round < GameState.maxRounds`:
+     - `GameState.round++`.
+     - `FishManager.reset();`
+     - Reset hook position and camera.
+     - Reset UI to lobby mode and gauge.
+     - `GameState.phase = 'LOBBY'`.
+   - Else:
+     - `GameState.phase = 'END_SCREEN'`.
+     - `UIManager.showEndScreen(GameState.coins)`:
+       - Show final coin total and maybe a simple grade message.
+
+### 5.9 Main Loop Hookup
+
+15. Implement animation loop:
 
 ```js
 let lastTime = 0;
-requestAnimationFrame(function loop(t) {
-  const dt = (t - lastTime) / 1000;
-  lastTime = t;
-  game.update(dt);
-  game.render();
-  requestAnimationFrame(loop);
-});
+function gameLoop(timestamp) {
+  const dt = (timestamp - lastTime) / 1000; // seconds
+  lastTime = timestamp;
+
+  // Update systems
+  if (GameState.phase === 'GAUGE_SELECT') {
+    // update gauge pointer pos
+  }
+  FishingController.update(dt);
+  AnimationManager.update(dt); // generic tweens if you implement them
+
+  requestAnimationFrame(gameLoop);
+}
+
+requestAnimationFrame((t) => { lastTime = t; gameLoop(t); });
 ```
 
-### Step 5 – Input Handling
+### 5.10 Testing & Tuning
 
-1. Add handlers to canvas:
-   - `mousedown` / `touchstart` → `onPointerDown`.
-   - `mousemove` / `touchmove` → `onPointerMove`.
-   - `mouseup` / `touchend` → `onPointerUp`.
-2. In `HOOK_ASCEND` and `HOOK_ASCEND_FAST`:
-   - When pointer is down, track lastX; on move, update `hookX` by delta.
-   - Clamp `hookX` within range (e.g., `[-width/2 + margin, width/2 - margin]`).
-3. Play button & upgrades:
-   - Add click listeners to each button DOM element.
-   - Buttons call methods on `game` (e.g. `game.startGauge()`).
-
-### Step 6 – Gauge System
-
-1. In `GAUGE_AIM` state:
-   - Update pointer position:
-     - `gaugeProgress += gaugeSpeed * gaugeDirection * dt`.
-     - If `gaugeProgress > 1` or `< 0`, clamp and reverse `gaugeDirection`.
-     - Apply easing at ends by reducing speed near 0 and 1 or by using a sinusoidal function.
-2. Position pointer DOM element:
-   - `pointer.style.left = (gaugeProgress * 100) + '%';`.
-3. On Play button click (while in `UPGRADE` → `GAUGE_AIM` cycle):
-   - First click from upgrade enters `GAUGE_AIM`.
-   - Second click (or same button behavior) while in `GAUGE_AIM`:
-     - Lock gauge.
-     - Compute `targetDepthMeters` from `gaugeProgress`.
-     - Set `hookTargetY = targetDepthMeters * depthScale`.
-     - Initialize hook at surface (`hookX=0`, `hookY=0`).
-     - Prepare `hookMaxFishThisRound = maxFish`.
-     - Switch to `HOOK_DESCEND`.
-     - Toggle UI: hide gauge or disable, show fish counter.
-
-### Step 7 – Fish Field & Spawning
-
-1. On game initialization (or each round), create a list of fish:
-
-   - Define sea area:
-     - Depth from 0 to maxDepthTier value (e.g., 30m).
-     - Horizontal range: `[-worldWidth/2, worldWidth/2]`.
-   - Spawn a fixed number per depth band (e.g., 10–20 fish per 10m band).
-   - For each fish:
-     - Random `depthMeters` within band.
-     - Convert to `y = depthMeters * depthScale`.
-     - Random `x` within world width.
-     - Determine rarity via depth-based probabilities.
-   - Store in `game.fishList`.
-
-2. In `update(dt)` for states that show water (descend/ascend):
-   - Animate fish swimming:
-     - `fish.x = fish.baseX + Math.sin(time * swimSpeed + fish.swimPhase) * swimAmplitude;`.
-
-3. You can keep fish persistent across rounds or respawn between rounds (simpler: persistent).
-
-### Step 8 – Hook Motion & Camera
-
-1. In `HOOK_DESCEND`:
-   - `hookY += hookSpeedDown * dt;`.
-   - If `hookY >= hookTargetY`, clamp and switch to `HOOK_WAIT_AT_DEPTH`, set `pauseTimer`.
-2. Camera follow:
-   - Desired `cameraY = hookY - cameraOffset` (keep hook near center of screen).
-   - Smooth:
-     - `cameraY += (targetCameraY - cameraY) * cameraLerpFactor * dt`.
-3. In `HOOK_WAIT_AT_DEPTH`:
-   - `pauseTimer -= dt`.
-   - When `pauseTimer <= 0` → switch to `HOOK_ASCEND`.
-4. In `HOOK_ASCEND`:
-   - `hookY -= hookSpeedUp * dt;`.
-   - If `hookY <= 0`, set `hookY = 0` and go to `SURFACE_SUMMARY` (if not already forced to fast).
-5. In `HOOK_ASCEND_FAST`:
-   - Same as ascend but with `hookSpeedUpFast`.
-
-### Step 9 – Collision & Catching
-
-1. Only active in `HOOK_ASCEND`:
-   - For each `fish` where `!fish.caught`:
-     - Compute world positions with camera offset for rendering; for collision, just use world positions.
-     - If `Math.hypot(fish.x - hookX, fish.y - hookY) < catchRadius`:
-       - `fish.caught = true;`
-       - `fish.attachedOffsetX = fish.x - hookX;`
-       - `fish.attachedOffsetY = fish.y - hookY;`
-       - Push into `caughtFish`.
-       - Update UI fish counter:
-         - `caughtCount = caughtFish.length;`
-         - Update text and progress width.
-       - Trigger catch popup/effect (store in effects array).
-       - If `caughtCount >= hookMaxFishThisRound`:
-         - Switch state to `HOOK_ASCEND_FAST`.
-
-2. In render:
-   - For `fish.caught === true`: draw them relative to hook:
-     - `drawFishAt(hookX + fish.attachedOffsetX, hookY + fish.attachedOffsetY)`.
-
-### Step 10 – Effects System (Popups & Coin Bursts)
-
-1. Define effect objects:
-
-```js
-class PopupText {
-  constructor(text, x, y, duration) {
-    this.text = text;
-    this.x = x;
-    this.y = y;
-    this.duration = duration;
-    this.time = 0;
-  }
-}
-class CoinBurst {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.particles = [...]; // each with angle, speed, life
-  }
-}
-```
-
-2. Maintain arrays `popupTexts` and `coinBursts` in game.
-3. On catching a fish:
-   - Create popup `"+<value>"` at hook position.
-4. On surface per-fish reveal:
-   - Create `CoinBurst` at fish display location.
-   - Create attaboy popup if any.
-5. In `update(dt)`:
-   - Update lifetimes, positions, and remove finished.
-6. In `render()`:
-   - Draw texts (`ctx.fillText`) with alpha fade.
-   - Draw particles as small yellow circles.
-
-### Step 11 – Surface Summary & Round Summary
-
-1. When entering `SURFACE_SUMMARY`:
-   - Freeze hook at surface.
-   - Prepare local list of caught fish for display animations.
-   - Option: reposition them neatly around boat (e.g., row on deck), or keep them hanging from hook with bigger bounce.
-2. Implement a small state internal to `SURFACE_SUMMARY`:
-   - Sequentially:
-     - For each fish i:
-       - Run 0.3–0.5s bounce animation.
-       - Trigger coin burst and value popup.
-   - Simpler: animate all fish at once, with staggered delays.
-3. After fixed duration or when all fish animations done:
-   - Compute `roundCoins = sum(caughtFish[i].value)`.
-   - Switch to `ROUND_SUMMARY`.
-
-4. In `ROUND_SUMMARY`:
-   - Fade in `#summaryOverlay`.
-   - Animate number:
-     - `displayedTotal = lerp(0, roundCoins, t)` over ~0.8s.
-   - After counter finishes, start coin fly animation:
-     - Predefine a few coin icons in DOM or draw in canvas, animate their positions from summary text to coin counter location.
-5. On completion:
-   - Update `game.coins += roundCoins;`.
-   - Set coin counter text.
-   - Clear `caughtFish`.
-   - Hide summary overlay.
-
-6. Round progression:
-   - `round++`.
-   - If `round <= maxRounds`:
-     - Go back to `UPGRADE`:
-       - Show upgrade buttons & gauge.
-       - Reset gauge stats.
-   - Else:
-     - Go to `END_SCREEN`:
-       - Show final coin total and CTA.
-
-### Step 12 – End Screen
-
-1. Show overlay:
-   - Text: “Fishing Complete!”.
-   - `finalCoinsText`: the final coin count.
-   - `Play Again` button (if needed).
-2. On `Play Again`:
-   - Reset:
-     - `coins = 100;`
-     - `round = 1;`
-     - `maxFishLevel = maxDepthLevel = 0;`
-     - `maxFish = 6;`
-     - `maxDepth = 5;`
-     - Rebuild fish list (optional).
-   - Hide `endScreen`, switch state to `UPGRADE`.
-
-### Step 13 – Tutorial Message (Round 1)
-
-1. On entering `HOOK_WAIT_AT_DEPTH` for round 1:
-   - Show `#tutorialText` near center of screen or near hook.
-   - Set `tutorialShown = true`.
-2. After the pause time ends (round 1 longer):
-   - Hide `#tutorialText`.
-   - Move to `HOOK_ASCEND`.
-
-### Step 14 – Polishing & Adjustments
-
-- Tweak speeds:
-  - Hook descent/ascent times should feel snappy but readable.
-- Tweak fish population:
-  - Ensure there are enough fish within reachable area along the vertical path.
-- UI clarity:
-  - Ensure fish counter appears exactly when hook starts descending and disappears before surface.
-- Visual hierarchy:
-  - Keep fisherman and boat always at top of screen.
-  - Depth gradient: darker at lower depths.
-- Debug tools (optional):
-  - Show depth marker text near hook (e.g., “12m”) during debug.
-  - Outline hook collision radius.
+16. Test flows:
+   - Upgrades:
+     - Verify costs, max levels, coin updates, disabled states.
+   - Gauge:
+     - Verify min depth = maxDepth - 2; pointer extremes map correctly.
+   - Fishing:
+     - Ensure tutorial appears only in first round.
+     - Check fish catching is responsive and limited to maxFish.
+   - Summary:
+     - Verify fish values accumulate; coins update correctly; transitions to next round/end.
+17. Tune:
+   - Vertical speed vs depth (to keep rounds short but satisfying).
+   - Drag sensitivity horizontally.
+   - Fish density and values to make 3 rounds feel rewarding.
 
 ---
 
-## 5. Summary of Implementation Order
-
-1. Static HTML structure + CSS layout.
-2. Canvas setup + basic rendering (background, boat, static hook).
-3. Game loop and state machine skeleton.
-4. UI controls (coin counter, play button, upgrade buttons) wiring.
-5. Upgrades system and coin spending.
-6. Gauge animation & depth selection.
-7. Hook vertical movement and camera following.
-8. Fish spawning and basic drawing.
-9. Hook horizontal drag and collision detection.
-10. Fish counter UI & progress bar updates.
-11. Catch effects and “rare!/legendary!” labels.
-12. Surface summary animations & per-fish values.
-13. Round summary (total coins, coin fly animation).
-14. Round progression and end screen.
-15. Balancing, polishing visuals, and performance checks.
-
-This plan yields a complete single-file playable that follows all major requirements: 3 rounds, upgrades, depth gauge, descending/ascending hook, catching fish with rarity feedback, coin economy, and a final summary.
+This plan yields a small, fully self-contained HTML playable with clear structure, low asset overhead, and easily adjustable gameplay parameters.
 ```

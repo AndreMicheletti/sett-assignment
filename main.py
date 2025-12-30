@@ -70,5 +70,8 @@ def generate_implementation_code():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--plan":
         generate_implementation_plan()
+    if len(sys.argv) > 1 and sys.argv[1] == "--code":
+        generate_implementation_code()
     else:
+        generate_implementation_plan()
         generate_implementation_code()
