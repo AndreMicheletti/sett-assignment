@@ -1,3 +1,4 @@
+import sys
 import os
 from openai import OpenAI
 
@@ -52,5 +53,22 @@ def generate_implementation_plan():
     write_file(OUTPUT_PLAN, ai_response)
     print(f"$ 1 - DONE! Saved to {OUTPUT_PLAN}")
 
+def generate_implementation_code():
+    print("$ 2 - IMPLEMENTATION CODE")
+    prompt = read_file(INPUT_PROMPT_IMPLEMENTATION)
+    plan_content = read_file(OUTPUT_PLAN)
+    
+    final_prompt = prompt.format(plan=plan_content)
+    print(f"$ 2 - FINAL PROMPT:\n{final_prompt}\n")
+    print("$ 2 - GENERATING RESPONSE...")
+    
+    ai_response = get_chat_response(final_prompt)
+    
+    write_file(OUTPUT_IMPLEMENTATION, ai_response)
+    print(f"$ 2 - DONE! Saved to {OUTPUT_IMPLEMENTATION}")
+
 if __name__ == "__main__":
-    generate_implementation_plan()
+    if len(sys.argv) > 1 and sys.argv[1] == "--plan":
+        generate_implementation_plan()
+    else:
+        generate_implementation_code()
