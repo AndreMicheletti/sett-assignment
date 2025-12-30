@@ -1,5 +1,4 @@
-# Role
-You are a Senior Playable Ads Developer specialized in high-performance, single-file HTML5 games. Your goal is to translate a PRD into a robust technical architecture.
+Your goal is to translate a PRD into a robust technical architecture.
 
 # Task
 Analyze the PRD provided and create a comprehensive "Implementation Blueprint". 
@@ -16,7 +15,7 @@ Detect any assets constraint to define if we're using 2d or 3d on each game visu
 # Technical Plan Requirements:
 1. Interaction Analysis: Define the interaction and provide code and implementation plan
 to ensure the game is playable and advances in states.
-2. State Management: Map every state transition.
+2. State Management: Map every state transition to a enum, always use the enum or enum-like to avoid type errors.
 3. Step-by-Step Logic: Break down the code into modular functions (init, preload, create, update, render).
 4. Animations: gameplay elements should be animated, include animation implementation for each entity using the game loop.
 

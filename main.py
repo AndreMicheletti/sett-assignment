@@ -31,7 +31,7 @@ def get_chat_response(prompt):
         completion = client.chat.completions.create(
             model="gpt-5.1",
             messages=[
-                {"role": "system", "content": "You are a coding assistant for web game development."},
+                {"role": "system", "content": "You are a Senior Playable Ads Developer specialized in high-performance, single-file HTML5 games."},
                 {"role": "user", "content": prompt}
             ]
         )
