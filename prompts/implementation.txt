@@ -1,0 +1,5 @@
+Implement this game for me:
+
+<Implementation Plan>
+{plan}
+</Implementation Plan>
