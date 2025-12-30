@@ -1020,8 +1020,11 @@
           ctx.fill();
 
           var grad = ctx.createLinearGradient(x, y, x + w, y);
-          grad.addColorStop(0, "#5effc2");
-          grad.addColorStop(1, "#0044aa");
+          grad.addColorStop(0, "#a9ff39ff");
+          grad.addColorStop(0.3, "#ffee00ff");
+          grad.addColorStop(0.5, "#aa0000ff");
+          grad.addColorStop(0.7, "#ffee00ff");
+          grad.addColorStop(1, "#a9ff39ff");
           ctx.fillStyle = grad;
           roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 8);
           ctx.fill();
@@ -1048,7 +1051,7 @@
 
           if (animatePointer) {
             var depthRange = Game.maxDepth - Game.minDepth;
-            var depth = Game.minDepth + depthRange * Game.gauge.value;
+            var depth = Game.minDepth + depthRange * Math.sin(Math.PI * Game.gauge.value);
             ctx.font = "12px sans-serif";
             ctx.fillStyle = "#e0f7ff";
             ctx.fillText("Depth: " + depth.toFixed(1) + " m", Game.width / 2, y + h + 18);
