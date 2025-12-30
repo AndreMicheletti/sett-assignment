@@ -14,12 +14,11 @@ Detect any assets constraint to define if we're using 2d or 3d on each game visu
 6. Gameplay flow: Analyze the desired gameplay and specify the implementation on the systems to achieve the gameplay flow.
 
 # Technical Plan Requirements:
-1. Core Loop Analysis: Define the "Hook", the "Interaction", and the "CTA".
+1. Interaction Analysis: Define the interaction and provide code and implementation plan
+to ensure the game is playable and advances in states.
 2. State Management: Map every state transition.
-3. Responsive Grid: Describe how elements scale for different screen ratios.
-4. UI/UX: Detail the positioning of the "Install" button (CTA) following mobile safety zones.
-5. Step-by-Step Logic: Break down the code into modular functions (init, preload, create, update, render).
-6. Animations: gameplay elements should be animated, include animation implementation for each entity using the game loop.
+3. Step-by-Step Logic: Break down the code into modular functions (init, preload, create, update, render).
+4. Animations: gameplay elements should be animated, include animation implementation for each entity using the game loop.
 
 <Product Requirements Document>
 {prd}
