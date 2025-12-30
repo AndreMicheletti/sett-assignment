@@ -52,6 +52,23 @@
       (function () {
         "use strict";
 
+        /* ---------- Utilities ---------- */
+        
+        const easeInOutCubic = t => t < 0.5
+          ? 4 * t * t * t
+          : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+        const easeInOutExpo = t =>
+          t === 0 ? 0 :
+          t === 1 ? 1 :
+          t < 0.5
+            ? Math.pow(2, 20 * t - 10) / 2
+            : (2 - Math.pow(2, -20 * t + 10)) / 2;
+
+        const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+        const easeInCubic = t => t * t * t;
+
         /* ---------- GAME STATE ---------- */
 
         var GameState = {
@@ -135,7 +152,7 @@
           fisherman: null,
 
           hookHorizontalInput: 0,
-          hookSpeedDown: 5,
+          hookSpeedDown: 10,
           hookSpeedUp: 6,
           hookFastUpMultiplier: 2,
 
@@ -516,8 +533,12 @@
           }
 
           var edgeDist = Math.min(g.value, 1 - g.value);
-          var ease = 0.35 + 0.65 * edgeDist;
-          g.speed = 1.4 * ease;
+          // Normalize to [0,1] where 1 = center
+          const centerT = edgeDist / 0.5;
+          // Ease speed
+          const eased = 0.3 + 0.7 * easeInOutCubic(centerT);
+          // Final speed
+          g.speed = 1.4 * eased;
         }
 
         function resetHookForDescent() {
@@ -568,9 +589,6 @@
 
           var targetX = Game.hookHorizontalInput * 3;
           Game.hook.x += (targetX - Game.hook.x) * Math.min(1, dt * 10);
-
-          // var targetX = clamp(Game.lastPointerPos.x, Game.width * 0.1, Game.width * 0.9);
-          // Game.hook.x = targetX;
 
           console.log("update ascent. hook y:", Game.hook.y, "vel:", Game.hook.velocityY, "targetX:", targetX);
           if (Game.hookHorizontalInput != 0) console.log("Game.hookHorizontalInput:", Game.hookHorizontalInput);
