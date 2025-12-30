@@ -25,6 +25,7 @@
       }
       canvas {
         display: block;
+        touch-action: none;
       }
       #threeCanvas {
         position: absolute;
@@ -36,6 +37,7 @@
         left: 0;
         top: 0;
         pointer-events: auto;
+        touch-action: none;
       }
     </style>
   </head>
@@ -554,13 +556,24 @@
           Game.hook.descending = false;
           Game.hook.velocityY = Game.hookSpeedUp;
           Game.state = GameState.ASCENT;
+          if (Game.lastPointerPos) {
+            Game.dragStartX = Game.lastPointerPos.x;
+          } else {
+            Game.dragStartX = Game.width * 0.5;
+          }
         }
 
         function updateAscent(dt) {
           Game.hook.y += Game.hook.velocityY * dt;
 
-          var targetX = Game.hookHorizontalInput * 5;
+          var targetX = Game.hookHorizontalInput * 3;
           Game.hook.x += (targetX - Game.hook.x) * Math.min(1, dt * 10);
+
+          // var targetX = clamp(Game.lastPointerPos.x, Game.width * 0.1, Game.width * 0.9);
+          // Game.hook.x = targetX;
+
+          console.log("update ascent. hook y:", Game.hook.y, "vel:", Game.hook.velocityY, "targetX:", targetX);
+          if (Game.hookHorizontalInput != 0) console.log("Game.hookHorizontalInput:", Game.hookHorizontalInput);
 
           updateCameraFollow(dt);
 
@@ -1303,8 +1316,7 @@
             confirmGaugeSelection();
             return;
           } else if (Game.state === GameState.ASCENT) {
-            Game.draggingHook = true;
-            Game.dragStartX = pos.x;
+            // Game.dragStartX = pos.x;
             return;
           } else if (Game.state === GameState.SURFACE_SUMMARY) {
             if (Game.summary && Game.summary.stage < 3) {
@@ -1321,17 +1333,16 @@
         }
 
         function onPointerMove(e) {
-          if (!Game.draggingHook) return;
           var pos = getPointerPos(e);
+          Game.lastPointerPos = pos;
           var dx = pos.x - Game.dragStartX;
-          var norm = dx / (Game.width * 0.4);
+          var norm = dx / (Game.width * 0.2);
           if (norm < -1) norm = -1;
           if (norm > 1) norm = 1;
           Game.hookHorizontalInput = norm;
         }
 
         function onPointerUp(e) {
-          Game.draggingHook = false;
           Game.hookHorizontalInput = 0;
         }
 
