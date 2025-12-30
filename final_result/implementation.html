@@ -147,6 +147,8 @@ canvas{display:block;}
     firstRoundTutorialShown:false,
 
     uiHitAreas:{
+      bw: 400,
+      bh: 50,
       upgradeFish:null,
       upgradeDepth:null,
       gaugeArea:null,
@@ -158,6 +160,10 @@ canvas{display:block;}
     Game.maxFishSlots = MaxFishUpgradeSteps[Game.maxFishSlotsLevel].value;
     Game.maxDepth     = MaxDepthUpgradeSteps[Game.maxDepthLevel].value;
     Game.minDepth     = Math.max(1, Game.maxDepth - 2);
+  }
+
+  function clamp(num, min, max) {
+    return Math.min(max, Math.max(num, min));
   }
 
   /* ---------- INIT ---------- */
@@ -323,11 +329,14 @@ canvas{display:block;}
     var w = Game.width;
     var h = Game.height;
 
-    var bw = w*0.8;
-    var bh = 40;
+    var bw = clamp(Game.width*0.8,200,480);
+    var bh = 70;
     var x = (w-bw)/2;
     var y1 = h*0.35;
     var y2 = y1 + bh + 15;
+
+    Game.uiHitAreas.bw = bw;
+    Game.uiHitAreas.bh = bh;
 
     Game.uiHitAreas.upgradeFish = {x:x,y:y1,w:bw,h:bh};
     Game.uiHitAreas.upgradeDepth = {x:x,y:y2,w:bw,h:bh};
@@ -1034,8 +1043,8 @@ canvas{display:block;}
   }
 
   function drawUpgrades(ctx){
-    var bw = Game.width*0.8;
-    var bh = 42;
+    var bw = Game.uiHitAreas.bw;
+    var bh = Game.uiHitAreas.bh;
     var x = (Game.width-bw)/2;
     var y1 = Game.height*0.35;
     var y2 = y1 + bh + 16;

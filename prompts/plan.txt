@@ -18,6 +18,7 @@ to ensure the game is playable and advances in states.
 2. State Management: Map every state transition to a enum, always use the enum or enum-like to avoid type errors.
 3. Step-by-Step Logic: Break down the code into modular functions (init, preload, create, update, render).
 4. Animations: gameplay elements should be animated, include animation implementation for each entity using the game loop.
+5. Easy Configuration: Place configuration constants on the top of the file, such as gameplay values, animation speeds and element sizes
 
 <Product Requirements Document>
 {prd}
